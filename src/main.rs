@@ -118,7 +118,7 @@ fn main() -> Result<(), Error> {
                 ),
         )
         .subcommand(
-            SubCommand::with_name("del")
+            SubCommand::with_name("rm")
                 .about("Delete an existing command")
                 .arg(&pwd_arg)
                 .arg(
@@ -145,7 +145,7 @@ fn main() -> Result<(), Error> {
 
     match matches.subcommand() {
         ("add", Some(add_matches)) => add(add_matches),
-        ("del", Some(del_matches)) => del(del_matches),
+        ("rm", Some(del_matches)) => del(del_matches),
         ("print", Some(print_matches)) => print(print_matches),
         _ => {
             match matches.value_of("command") {
