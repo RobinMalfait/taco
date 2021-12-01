@@ -43,7 +43,7 @@ impl Config {
 
     /// Get the resolved commands, these are the commands of the current project, merged with all
     /// the parent projects.
-    fn resolve_project_commands(&mut self, project: &str) -> Option<&mut HashMap<String, String>> {
+    fn resolve_project(&mut self, project: &str) -> Option<&mut HashMap<String, String>> {
         let path = fs::canonicalize(project).unwrap();
         let project = path.to_str().unwrap();
 
@@ -285,18 +285,12 @@ fn main() -> Result<(), Error> {
                 println!(
                     "{}",
                     serde_json::to_string_pretty(
-                        config
-                            .resolve_project_commands(pwd)
-                            .unwrap_or(&mut HashMap::new())
+                        config.resolve_project(pwd).unwrap_or(&mut HashMap::new())
                     )
                     .unwrap()
                 );
             } else {
-                print_project_commands(
-                    config
-                        .resolve_project_commands(pwd)
-                        .unwrap_or(&mut HashMap::new()),
-                );
+                print_project_commands(config.resolve_project(pwd).unwrap_or(&mut HashMap::new()));
             }
 
             Ok(())
@@ -307,7 +301,7 @@ fn main() -> Result<(), Error> {
                     let mut config = read_config();
                     let pwd = matches.value_of("pwd").unwrap();
 
-                    if let Some(project) = config.resolve_project_commands(pwd) {
+                    if let Some(project) = config.resolve_project(pwd) {
                         match project.get_mut(command) {
                             Some(args) => {
                                 if matches.is_present("print") {
