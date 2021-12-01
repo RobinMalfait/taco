@@ -193,23 +193,25 @@ fn main() -> Result<(), Error> {
                             if let Some(existing) = project.get(name) {
                                 println!(
                                     "Command \"{}\" already exists with value \"{}\"",
-                                    name, existing
+                                    name.blue(),
+                                    existing.blue()
                                 );
 
                                 match confirm(&format!(
                                     "Do you want to override it with \"{}\"?",
-                                    command
+                                    command.blue()
                                 )) {
                                     true => {
                                         // Passthrough
                                     }
                                     _ => {
-                                        println!("Aborted!");
+                                        println!("{}", "Aborted!".red());
                                         return Ok(());
                                     }
                                 }
                             }
 
+                            // Akshually insert the new command.
                             project.insert(name.to_string(), command.clone());
                             write_config(&config);
                         }
@@ -221,7 +223,12 @@ fn main() -> Result<(), Error> {
                         }
                     }
 
-                    println!("Aliased \"{}\" to \"{}\" in {}", name, &command, pwd);
+                    println!(
+                        "Aliased \"{}\" to \"{}\" in {}",
+                        name.blue(),
+                        &command.blue(),
+                        pwd.dimmed()
+                    );
                 }
                 None => {
                     println!("No command provided.\nUsage:\n");
@@ -229,7 +236,7 @@ fn main() -> Result<(), Error> {
 
                     println!("\nExample:");
                     println!(
-                        "  taco add {} -- {}",
+                        "  taco add {} -- {}\n",
                         "publish".blue(),
                         "npm publish".blue()
                     );
@@ -244,19 +251,28 @@ fn main() -> Result<(), Error> {
 
             let name = rm_matches.value_of("name").unwrap();
 
-            if let Some(project) = config.get_project(pwd) {
-                match project.remove(name) {
-                    Some(_) => {
-                        write_config(&config);
-                        println!("Removed alias \"{}\"\n", name.blue());
+            match config.get_project(pwd) {
+                Some(project) => {
+                    match project.remove(name) {
+                        Some(_) => {
+                            write_config(&config);
+                            println!("Removed alias \"{}\"\n", name.blue());
+                        }
+                        None => {
+                            println!("Alias \"{}\" does not exist.\n", name.blue());
+                            print_project_commands(project);
+                        }
                     }
-                    None => {
-                        println!("Alias \"{}\" does not exist.\n", name.blue());
-                        print_project_commands(project);
-                    }
-                }
 
-                write_config(&config);
+                    write_config(&config);
+                }
+                None => {
+                    println!(
+                        "Project \"{}\" does not exist, therefore \"{}\" doesn't exist either.",
+                        pwd.dimmed(),
+                        name.blue()
+                    );
+                }
             }
 
             Ok(())
@@ -376,13 +392,15 @@ fn print_project_commands(project: &HashMap<String, String>) {
 
 fn confirm(message: &str) -> bool {
     let mut s = String::new();
-    print!("{} (y/N) ", message);
+    print!("{} {} ", message, "(y/N)".dimmed());
     let _ = std::io::stdout().flush();
     std::io::stdin()
         .read_line(&mut s)
         .expect("Did not enter a correct string");
 
-    s.trim() == "y" || s.trim() == "Y" || s.trim() == ""
+    println!();
+
+    s.trim() == "y" || s.trim() == "Y"
 }
 
 // Currently using a library that automatically gives you the
