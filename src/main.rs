@@ -101,6 +101,12 @@ fn main() -> Result<(), Error> {
         )
         .arg(&pwd_arg)
         .arg(Arg::with_name("command").takes_value(false))
+        .arg(
+            Arg::with_name("arguments")
+                .multiple(true)
+                .takes_value(false)
+                .help("Arguments to passthrough"),
+        )
         .subcommand(
             SubCommand::with_name("add")
                 .about("Add a new command")
@@ -113,7 +119,7 @@ fn main() -> Result<(), Error> {
                 .arg(
                     Arg::with_name("arguments")
                         .multiple(true)
-                        .takes_value(true)
+                        .takes_value(false)
                         .help("Command to execute"),
                 ),
         )
@@ -154,17 +160,29 @@ fn main() -> Result<(), Error> {
                     let pwd = matches.value_of("pwd").unwrap();
 
                     if let Some(project) = config.resolve_project_scripts(pwd) {
-                        match project.get(command) {
+                        match project.get_mut(command) {
                             Some(args) => {
                                 if matches.is_present("print") {
                                     // Actually print the command
                                     println!("{}", args);
                                 } else {
                                     // Execute the command
-                                    Command::new("zsh")
-                                        .arg("-c")
-                                        .arg(args)
-                                        .stdin(Stdio::inherit())
+                                    let mut cmd = Command::new("zsh");
+
+                                    // Passthrough arguments
+                                    if let Some(passthrough) = matches.values_of("arguments") {
+                                        let command = passthrough.collect::<Vec<_>>().join(" ");
+
+                                        // Attach arguments to existing command
+                                        if !command.is_empty() {
+                                            args.push(' ');
+                                            args.push_str(&command);
+                                        }
+                                    }
+
+                                    cmd.arg("-c").arg(args);
+
+                                    cmd.stdin(Stdio::inherit())
                                         .stdout(Stdio::inherit())
                                         .stderr(Stdio::inherit())
                                         .output()
