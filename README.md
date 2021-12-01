@@ -3,7 +3,6 @@
 > It's a wrapper around your commands!
 
 ### Example Usage
-
 Let's imagine you have 2 projects, and you want to run `tests` in each project.
 
 1. `Project A`, is a Laravel PHP project, so you want to use `phpunit` or `pest`.
@@ -68,30 +67,66 @@ This is how I use it personally:
 
 ---
 
+### API
+
+#### `taco add {name} -- {command}`
+
+```sh
+taco add ls -- ls -lah
+# Aliased "ls" to "ls -lah" in /Users/robin
 ```
-Taco 1.0
 
-USAGE:
-    Taco [FLAGS] [OPTIONS] [ARGS] [SUBCOMMAND]
+#### `taco {name} -- {passthrough arguments}`
 
-FLAGS:
-    -h, --help       Prints help information
-    -p, --print
-    -V, --version    Prints version information
-
-OPTIONS:
-    -c, --config <config>    Sets a custom config file
-        --pwd <pwd>          The current working directory [default: /Users/robin/github.com/RobinMalfait/taco]
-
-ARGS:
-    <command>
-    <arguments>...    Arguments to passthrough
-
-SUBCOMMANDS:
-    add      Add a new command
-    help     Prints this message or the help of the given subcommand(s)
-    print    Print the commands
-    rm       Delete an existing command
+```sh
+taco ls 
+# total 680
+# total 680
+# drwxr-x---+ 59 robin  staff   1.8K Dec  1 21:06 .
+# drwxr-xr-x   5 root   admin   160B Nov 15 18:46 ..
+# -rw-r--r--@  1 robin  staff    18K Dec  1 19:38 .DS_Store
+# drwx------+ 56 robin  staff   1.8K Nov 29 18:43 .Trash
+# ...
 ```
+
+Or if you want to look at the command that is going to be executed use the `--print` flag.
+```sh
+taco ls --print
+# ls -lah
+```
+
+#### `taco print`
+
+```sh
+taco print
+# Available commands:
+#
+#   taco test
+#     ./node_modules/.bin/jest
+#
+#   taco ls
+#     ls -lah
+#
+# 2 commands
+```
+
+Or..
+
+```sh
+taco print --json
+# {
+#   "ls": "ls -lah",
+#   "test": "./node_modules/.bin/jest"
+# }
+```
+
+#### `taco rm {name}`
+
+```sh
+taco rm ls
+# Removed alias "ls"
+```
+
+---
 
 Inspired by the awesome [Projector](https://github.com/ThePrimeagen/projector) tool by [ThePrimeagen](https://github.com/ThePrimeagen)!
