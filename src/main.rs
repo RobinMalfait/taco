@@ -8,10 +8,14 @@ use std::io::{Error, Write};
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize)]
 struct Config {
+    /// A map keyed by the location of each project, the value is another map with key/value pairs
+    /// for the command name and the command + arguments to run.
     projects: HashMap<String, HashMap<String, String>>,
 
+    /// This is not ideal, but currently the resolved HashMap is used to combine the current
+    /// project's commands, merged with all the commands of parent projects.
     #[serde(skip)]
     resolved: HashMap<String, HashMap<String, String>>,
 }
@@ -24,6 +28,8 @@ impl Config {
         }
     }
 
+    /// Get the current project's commands.
+    /// Note: it will not merge the commands with any parent projects.
     fn get_project(&mut self, project: &str) -> Option<&mut HashMap<String, String>> {
         let path = fs::canonicalize(project).unwrap();
         let project = path.to_str().unwrap();
@@ -35,11 +41,13 @@ impl Config {
         }
     }
 
-    fn resolve_project_scripts(&mut self, project: &str) -> Option<&mut HashMap<String, String>> {
+    /// Get the resolved commands, these are the commands of the current project, merged with all
+    /// the parent projects.
+    fn resolve_project_commands(&mut self, project: &str) -> Option<&mut HashMap<String, String>> {
         let path = fs::canonicalize(project).unwrap();
         let project = path.to_str().unwrap();
 
-        let mut scripts: HashMap<String, String> = HashMap::new();
+        let mut commands: HashMap<String, String> = HashMap::new();
 
         let mut parent: Vec<&str> = vec![];
         for part in path.iter() {
@@ -51,20 +59,20 @@ impl Config {
                 project_path = (&project_path)[1..].to_owned();
             }
 
-            // Merge scripts with parent
+            // Merge commands with parent
             if self.projects.contains_key(&project_path) {
                 for (key, value) in self.projects.get_mut(&project_path).unwrap() {
-                    scripts.insert(key.to_owned(), value.to_owned());
+                    commands.insert(key.to_owned(), value.to_owned());
                 }
             }
         }
 
-        if !scripts.is_empty() && !self.resolved.contains_key(project) {
+        if !commands.is_empty() && !self.resolved.contains_key(project) {
             self.resolved.insert(project.to_owned(), HashMap::new());
         }
 
         if let Some(project) = self.resolved.get_mut(project) {
-            for (key, value) in &scripts {
+            for (key, value) in &commands {
                 project.insert(key.to_owned(), value.to_owned());
             }
 
@@ -77,12 +85,6 @@ impl Config {
 
 fn main() -> Result<(), Error> {
     let current_dir = std::env::current_dir()?;
-
-    let pwd_arg = Arg::with_name("pwd")
-        .long("pwd")
-        .help("The current working directory")
-        .default_value(current_dir.to_str().unwrap())
-        .takes_value(true);
 
     let mut cli = App::new("Taco")
         .version("1.0")
@@ -99,7 +101,13 @@ fn main() -> Result<(), Error> {
                 .long("print")
                 .takes_value(false),
         )
-        .arg(&pwd_arg)
+        .arg(
+            Arg::with_name("pwd")
+                .long("pwd")
+                .help("The current working directory")
+                .default_value(current_dir.to_str().unwrap())
+                .takes_value(true),
+        )
         .arg(Arg::with_name("command").takes_value(false))
         .arg(
             Arg::with_name("arguments")
@@ -110,7 +118,13 @@ fn main() -> Result<(), Error> {
         .subcommand(
             SubCommand::with_name("add")
                 .about("Add a new command")
-                .arg(&pwd_arg)
+                .arg(
+                    Arg::with_name("pwd")
+                        .long("pwd")
+                        .help("The current working directory")
+                        .default_value(current_dir.to_str().unwrap())
+                        .takes_value(true),
+                )
                 .arg(
                     Arg::with_name("name")
                         .takes_value(true)
@@ -126,7 +140,13 @@ fn main() -> Result<(), Error> {
         .subcommand(
             SubCommand::with_name("rm")
                 .about("Delete an existing command")
-                .arg(&pwd_arg)
+                .arg(
+                    Arg::with_name("pwd")
+                        .long("pwd")
+                        .help("The current working directory")
+                        .default_value(current_dir.to_str().unwrap())
+                        .takes_value(true),
+                )
                 .arg(
                     Arg::with_name("name")
                         .takes_value(true)
@@ -136,10 +156,16 @@ fn main() -> Result<(), Error> {
         .subcommand(
             SubCommand::with_name("print")
                 .about("Print the commands")
-                .arg(&pwd_arg)
+                .arg(
+                    Arg::with_name("pwd")
+                        .long("pwd")
+                        .help("The current working directory")
+                        .default_value(current_dir.to_str().unwrap())
+                        .takes_value(true),
+                )
                 .arg(
                     Arg::with_name("json")
-                        .help("Prints scripts in JSON format")
+                        .help("Prints commands in JSON format")
                         .long("json")
                         .takes_value(false),
                 ),
@@ -159,7 +185,7 @@ fn main() -> Result<(), Error> {
                     let mut config = read_config();
                     let pwd = matches.value_of("pwd").unwrap();
 
-                    if let Some(project) = config.resolve_project_scripts(pwd) {
+                    if let Some(project) = config.resolve_project_commands(pwd) {
                         match project.get_mut(command) {
                             Some(args) => {
                                 if matches.is_present("print") {
@@ -192,7 +218,7 @@ fn main() -> Result<(), Error> {
                             None => {
                                 // Project exists but command doesn't.
                                 println!("Command `{}` does not exist.\n", command.blue());
-                                print_project_scripts(project);
+                                print_project_commands(project);
                             }
                         }
                     } else {
@@ -213,16 +239,16 @@ fn main() -> Result<(), Error> {
     }
 }
 
-fn print_project_scripts(project: &HashMap<String, String>) {
-    println!("Available scripts:\n");
-    let scripts = project.len();
+fn print_project_commands(project: &HashMap<String, String>) {
+    println!("Available commands:\n");
+    let commands = project.len();
 
-    // No scripts
-    if scripts == 0 {
-        println!("{}", " \u{2219} There are no scripts available.\n".red());
+    // No commands
+    if commands == 0 {
+        println!("{}", " \u{2219} There are no commands available.\n".red());
     }
 
-    // Scripts
+    // Commands
     for (key, value) in project {
         println!("  taco {}\n    {}\n", key.blue(), value.dimmed());
     }
@@ -231,9 +257,9 @@ fn print_project_scripts(project: &HashMap<String, String>) {
     println!(
         "{}",
         format!(
-            "{} script{}",
-            scripts,
-            match scripts {
+            "{} command{}",
+            commands,
+            match commands {
                 1 => "",
                 _ => "s",
             }
@@ -317,7 +343,7 @@ fn del(matches: &clap::ArgMatches) -> Result<(), Error> {
             }
             None => {
                 println!("Alias \"{}\" does not exist.\n", name.blue());
-                print_project_scripts(project);
+                print_project_commands(project);
             }
         }
 
@@ -336,15 +362,15 @@ fn print(matches: &clap::ArgMatches) -> Result<(), Error> {
             "{}",
             serde_json::to_string_pretty(
                 config
-                    .resolve_project_scripts(pwd)
+                    .resolve_project_commands(pwd)
                     .unwrap_or(&mut HashMap::new())
             )
             .unwrap()
         );
     } else {
-        print_project_scripts(
+        print_project_commands(
             config
-                .resolve_project_scripts(pwd)
+                .resolve_project_commands(pwd)
                 .unwrap_or(&mut HashMap::new()),
         );
     }
@@ -363,6 +389,11 @@ fn confirm(message: &str) -> bool {
     s.trim() == "y" || s.trim() == "Y" || s.trim() == ""
 }
 
+// Currently using a library that automatically gives you the
+// config dir, which does all the magic for you (including the $HOME, $XDG_CONFIG_HOME, ...).
+// However, I'm on MacOS and I also want to use `~/.config`, but it results in
+// `$HOME/Library/Application Support` instead, which sort of makes sense but I don't want that...
+// Therefore doing this manually.
 fn config_file_location() -> String {
     return Path::new(&dirs::home_dir().unwrap())
         .join(".config")
@@ -382,7 +413,7 @@ fn ensure_config_exists() {
         let prefix = location.parent().unwrap();
         std::fs::create_dir_all(prefix).unwrap();
 
-        //
+        // Write an empty config file
         write_config(&Config::new());
     }
 }
