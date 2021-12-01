@@ -2,13 +2,14 @@
 
 > It's a wrapper around your commands!
 
-### Example Usage
+### Eh? What are you talking about...
+
 Let's imagine you have 2 projects, and you want to run `tests` in each project.
 
 1. `Project A`, is a Laravel PHP project, so you want to use `phpunit` or `pest`.
 2. `Project b`, is a JavaScript project, so you want to use `jest` or `npm run test`.
 
-I don't want to rember all of that...
+I don't want to rember all of that... Let's fix it.
 
 ```sh
 cd ~/projects/php_project_a
@@ -18,9 +19,9 @@ cd ~/projects/js_project_b
 taco add test -- npm run test
 ```
 
-So what happened here? We created aliases.
+So what happened here? We created aliases!
 
-`~/.config/taco/taco.json`
+This is what the config looks like in `~/.config/taco/taco.json`
 ```json
 {
   "projects": {
