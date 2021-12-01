@@ -69,14 +69,14 @@ This is how I use it personally:
 
 ### API
 
-#### `taco add {name} -- {command}`
+#### Add – `taco add {name} -- {command}`
 
 ```sh
 taco add ls -- ls -lah
 # Aliased "ls" to "ls -lah" in /Users/robin
 ```
 
-#### `taco {name} -- {passthrough arguments}`
+#### Execute – `taco {name} -- {passthrough arguments}`
 
 ```sh
 taco ls 
@@ -95,7 +95,7 @@ taco ls --print
 # ls -lah
 ```
 
-#### `taco print`
+#### Print – `taco print`
 
 ```sh
 taco print
@@ -120,7 +120,7 @@ taco print --json
 # }
 ```
 
-#### `taco rm {name}`
+#### Remove – `taco rm {name}`
 
 ```sh
 taco rm ls
