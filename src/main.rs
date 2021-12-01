@@ -316,6 +316,7 @@ fn main() -> Result<(), Error> {
                                 } else {
                                     // Execute the command
                                     let mut cmd = Command::new("zsh");
+                                    cmd.current_dir(pwd);
 
                                     // Passthrough arguments
                                     if let Some(passthrough) = matches.values_of("arguments") {
