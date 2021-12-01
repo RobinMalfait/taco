@@ -176,9 +176,115 @@ fn main() -> Result<(), Error> {
     let matches = cli.clone().get_matches();
 
     match matches.subcommand() {
-        ("add", Some(add_matches)) => add(add_matches),
-        ("rm", Some(del_matches)) => del(del_matches),
-        ("print", Some(print_matches)) => print(print_matches),
+        ("add", Some(add_matches)) => {
+            let pwd = add_matches.value_of("pwd").unwrap();
+            let mut config = read_config();
+
+            match add_matches.value_of("name") {
+                Some(name) => {
+                    let command = add_matches
+                        .values_of("arguments")
+                        .unwrap()
+                        .collect::<Vec<_>>()
+                        .join(" ");
+
+                    match config.get_project(pwd) {
+                        Some(project) => {
+                            if let Some(existing) = project.get(name) {
+                                println!(
+                                    "Command \"{}\" already exists with value \"{}\"",
+                                    name, existing
+                                );
+
+                                match confirm(&format!(
+                                    "Do you want to override it with \"{}\"?",
+                                    command
+                                )) {
+                                    true => {
+                                        // Passthrough
+                                    }
+                                    _ => {
+                                        println!("Aborted!");
+                                        return Ok(());
+                                    }
+                                }
+                            }
+
+                            project.insert(name.to_string(), command.clone());
+                            write_config(&config);
+                        }
+                        None => {
+                            let mut project = HashMap::new();
+                            project.insert(name.to_string(), command.clone());
+                            config.projects.insert(pwd.to_string(), project);
+                            write_config(&config);
+                        }
+                    }
+
+                    println!("Aliased \"{}\" to \"{}\" in {}", name, &command, pwd);
+                }
+                None => {
+                    println!("No command provided.\nUsage:\n");
+                    println!("  taco add {} -- {}", "name".blue(), "commands".blue());
+
+                    println!("\nExample:");
+                    println!(
+                        "  taco add {} -- {}",
+                        "publish".blue(),
+                        "npm publish".blue()
+                    );
+                }
+            }
+
+            Ok(())
+        }
+        ("rm", Some(rm_matches)) => {
+            let pwd = rm_matches.value_of("pwd").unwrap();
+            let mut config = read_config();
+
+            let name = rm_matches.value_of("name").unwrap();
+
+            if let Some(project) = config.get_project(pwd) {
+                match project.remove(name) {
+                    Some(_) => {
+                        write_config(&config);
+                        println!("Removed alias \"{}\"\n", name.blue());
+                    }
+                    None => {
+                        println!("Alias \"{}\" does not exist.\n", name.blue());
+                        print_project_commands(project);
+                    }
+                }
+
+                write_config(&config);
+            }
+
+            Ok(())
+        }
+        ("print", Some(print_matches)) => {
+            let pwd = print_matches.value_of("pwd").unwrap();
+            let mut config = read_config();
+
+            if print_matches.is_present("json") {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(
+                        config
+                            .resolve_project_commands(pwd)
+                            .unwrap_or(&mut HashMap::new())
+                    )
+                    .unwrap()
+                );
+            } else {
+                print_project_commands(
+                    config
+                        .resolve_project_commands(pwd)
+                        .unwrap_or(&mut HashMap::new()),
+                );
+            }
+
+            Ok(())
+        }
         _ => {
             match matches.value_of("command") {
                 Some(command) => {
@@ -266,116 +372,6 @@ fn print_project_commands(project: &HashMap<String, String>) {
         )
         .dimmed()
     );
-}
-
-fn add(matches: &clap::ArgMatches) -> Result<(), Error> {
-    let pwd = matches.value_of("pwd").unwrap();
-    let mut config = read_config();
-
-    match matches.value_of("name") {
-        Some(name) => {
-            let command = matches
-                .values_of("arguments")
-                .unwrap()
-                .collect::<Vec<_>>()
-                .join(" ");
-
-            match config.get_project(pwd) {
-                Some(project) => {
-                    if let Some(existing) = project.get(name) {
-                        println!(
-                            "Command \"{}\" already exists with value \"{}\"",
-                            name, existing
-                        );
-
-                        match confirm(&format!("Do you want to override it with \"{}\"?", command))
-                        {
-                            true => {
-                                // Passthrough
-                            }
-                            _ => {
-                                println!("Aborted!");
-                                return Ok(());
-                            }
-                        }
-                    }
-
-                    project.insert(name.to_string(), command.clone());
-                    write_config(&config);
-                }
-                None => {
-                    let mut project = HashMap::new();
-                    project.insert(name.to_string(), command.clone());
-                    config.projects.insert(pwd.to_string(), project);
-                    write_config(&config);
-                }
-            }
-
-            println!("Aliased \"{}\" to \"{}\" in {}", name, &command, pwd);
-        }
-        None => {
-            println!("No command provided.\nUsage:\n");
-            println!("  taco add {} -- {}", "name".blue(), "commands".blue());
-
-            println!("\nExample:");
-            println!(
-                "  taco add {} -- {}",
-                "publish".blue(),
-                "npm publish".blue()
-            );
-        }
-    }
-
-    Ok(())
-}
-
-fn del(matches: &clap::ArgMatches) -> Result<(), Error> {
-    let pwd = matches.value_of("pwd").unwrap();
-    let mut config = read_config();
-
-    let name = matches.value_of("name").unwrap();
-
-    if let Some(project) = config.get_project(pwd) {
-        match project.remove(name) {
-            Some(_) => {
-                write_config(&config);
-                println!("Removed alias \"{}\"\n", name.blue());
-            }
-            None => {
-                println!("Alias \"{}\" does not exist.\n", name.blue());
-                print_project_commands(project);
-            }
-        }
-
-        write_config(&config);
-    }
-
-    Ok(())
-}
-
-fn print(matches: &clap::ArgMatches) -> Result<(), Error> {
-    let pwd = matches.value_of("pwd").unwrap();
-    let mut config = read_config();
-
-    if matches.is_present("json") {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(
-                config
-                    .resolve_project_commands(pwd)
-                    .unwrap_or(&mut HashMap::new())
-            )
-            .unwrap()
-        );
-    } else {
-        print_project_commands(
-            config
-                .resolve_project_commands(pwd)
-                .unwrap_or(&mut HashMap::new()),
-        );
-    }
-
-    Ok(())
 }
 
 fn confirm(message: &str) -> bool {
