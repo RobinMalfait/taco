@@ -9,7 +9,7 @@ Let's imagine you have 2 projects, and you want to run `tests` in each project.
 1. `Project A`, is a Laravel PHP project, so you want to use `phpunit` or `pest`.
 2. `Project b`, is a JavaScript project, so you want to use `jest` or `npm run test`.
 
-I don't want to rember all of that... Let's fix it.
+I don't want to remember all of that... Let's fix it.
 
 ```sh
 cd ~/projects/php_project_a
@@ -40,7 +40,7 @@ in a lot of different projects, and a lot of them are not even mine. It would be
 
 #### Inheritance
 
-Scripts also inherit scripts that are set for **parent** directories. This allows you to set the `npm run test` only once in a shared folder.
+Scripts inherit scripts from **parent** directories. This allows you to set the `npm run test` only once in a shared folder. In my case, I did this in a `~/github.com/tailwindlabs` folder.
 
 This is how I use it personally:
 
