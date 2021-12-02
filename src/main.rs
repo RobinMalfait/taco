@@ -8,16 +8,18 @@ use std::io::{Error, Write};
 use std::path::Path;
 use std::process::{Command, Stdio};
 
+type Project = HashMap<String, String>;
+
 #[derive(Debug, Serialize, Deserialize)]
 struct Config {
     /// A map keyed by the location of each project, the value is another map with key/value pairs
     /// for the command name and the command + arguments to run.
-    projects: HashMap<String, HashMap<String, String>>,
+    projects: HashMap<String, Project>,
 
     /// This is not ideal, but currently the resolved HashMap is used to combine the current
     /// project's commands, merged with all the commands of parent projects.
     #[serde(skip)]
-    resolved: HashMap<String, HashMap<String, String>>,
+    resolved: HashMap<String, Project>,
 }
 
 impl Config {
@@ -30,24 +32,18 @@ impl Config {
 
     /// Get the current project's commands.
     /// Note: it will not merge the commands with any parent projects.
-    fn get_project(&mut self, project: &str) -> Option<&mut HashMap<String, String>> {
+    fn get_project(&mut self, project: &str) -> Option<&mut Project> {
         let path = fs::canonicalize(project).unwrap();
-        let project = path.to_str().unwrap();
-
-        if self.projects.contains_key(project) {
-            self.projects.get_mut(project)
-        } else {
-            None
-        }
+        self.projects.get_mut(path.to_str().unwrap())
     }
 
     /// Get the resolved commands, these are the commands of the current project, merged with all
     /// the parent projects.
-    fn resolve_project(&mut self, project: &str) -> Option<&mut HashMap<String, String>> {
+    fn resolve_project(&mut self, project: &str) -> Option<&mut Project> {
         let path = fs::canonicalize(project).unwrap();
         let project = path.to_str().unwrap();
 
-        let mut commands: HashMap<String, String> = HashMap::new();
+        let mut commands: Project = HashMap::new();
 
         let mut parent: Vec<&str> = vec![];
         for part in path.iter() {
@@ -75,11 +71,9 @@ impl Config {
             for (key, value) in &commands {
                 project.insert(key.to_owned(), value.to_owned());
             }
-
-            Some(project)
-        } else {
-            None
         }
+
+        self.resolved.get_mut(project)
     }
 }
 
@@ -329,7 +323,7 @@ fn main() -> Result<(), Error> {
     }
 }
 
-fn print_project_commands(project: &HashMap<String, String>) {
+fn print_project_commands(project: &Project) {
     println!("Available commands:\n");
     let commands = project.len();
 
