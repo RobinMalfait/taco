@@ -89,13 +89,6 @@ fn main() -> Result<(), Error> {
     let mut cli = App::new("Taco")
         .version("1.0")
         .arg(
-            Arg::with_name("config")
-                .short("c")
-                .long("config")
-                .help("Sets a custom config file")
-                .takes_value(true),
-        )
-        .arg(
             Arg::with_name("print")
                 .short("p")
                 .long("print")
@@ -106,7 +99,8 @@ fn main() -> Result<(), Error> {
                 .long("pwd")
                 .help("The current working directory")
                 .default_value(current_dir.to_str().unwrap())
-                .takes_value(true),
+                .takes_value(true)
+                .global(true),
         )
         .arg(Arg::with_name("command").takes_value(false))
         .arg(
@@ -118,13 +112,6 @@ fn main() -> Result<(), Error> {
         .subcommand(
             SubCommand::with_name("add")
                 .about("Add a new command")
-                .arg(
-                    Arg::with_name("pwd")
-                        .long("pwd")
-                        .help("The current working directory")
-                        .default_value(current_dir.to_str().unwrap())
-                        .takes_value(true),
-                )
                 .arg(
                     Arg::with_name("name")
                         .takes_value(true)
@@ -141,13 +128,6 @@ fn main() -> Result<(), Error> {
             SubCommand::with_name("rm")
                 .about("Delete an existing command")
                 .arg(
-                    Arg::with_name("pwd")
-                        .long("pwd")
-                        .help("The current working directory")
-                        .default_value(current_dir.to_str().unwrap())
-                        .takes_value(true),
-                )
-                .arg(
                     Arg::with_name("name")
                         .takes_value(true)
                         .help("Name of the command"),
@@ -156,13 +136,6 @@ fn main() -> Result<(), Error> {
         .subcommand(
             SubCommand::with_name("print")
                 .about("Print the commands")
-                .arg(
-                    Arg::with_name("pwd")
-                        .long("pwd")
-                        .help("The current working directory")
-                        .default_value(current_dir.to_str().unwrap())
-                        .takes_value(true),
-                )
                 .arg(
                     Arg::with_name("json")
                         .help("Prints commands in JSON format")
@@ -177,7 +150,7 @@ fn main() -> Result<(), Error> {
 
     match matches.subcommand() {
         ("add", Some(add_matches)) => {
-            let pwd = add_matches.value_of("pwd").unwrap();
+            let pwd = matches.value_of("pwd").unwrap();
             let mut config = read_config();
 
             match add_matches.value_of("name") {
@@ -246,7 +219,7 @@ fn main() -> Result<(), Error> {
             Ok(())
         }
         ("rm", Some(rm_matches)) => {
-            let pwd = rm_matches.value_of("pwd").unwrap();
+            let pwd = matches.value_of("pwd").unwrap();
             let mut config = read_config();
 
             let name = rm_matches.value_of("name").unwrap();
@@ -278,7 +251,7 @@ fn main() -> Result<(), Error> {
             Ok(())
         }
         ("print", Some(print_matches)) => {
-            let pwd = print_matches.value_of("pwd").unwrap();
+            let pwd = matches.value_of("pwd").unwrap();
             let mut config = read_config();
 
             if print_matches.is_present("json") {
