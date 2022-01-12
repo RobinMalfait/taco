@@ -68,6 +68,39 @@ This is how I use it personally:
 
 ---
 
+## Requirements
+
+- This is a Rust project and the binaries are not published
+  anywhere. This means that you need to have Rust/Cargo installed.
+- This tool talks to the GitHub API, therefore you need to have a
+  `GITHUB_API_TOKEN` environment variable.
+
+## Installation
+
+```sh
+cargo build --release
+```
+
+This will create a `taco` binary at `./target/release/taco`.
+
+### Optional quality of life improvements
+
+I am using `zshrc`, and I make sure to export the `./target/release/` folder so
+that I can automatically run the `taco` binary.
+
+```sh
+PATH=./target/release:$PATH
+```
+
+In addition, I also have this `PATH`, so that I can run `taco` from
+anywhere on my system.
+
+```sh
+PATH=/path-to-taco-project/target/release:$PATH
+```
+
+---
+
 ### API
 
 #### Add – `taco add {name} -- {command}`
