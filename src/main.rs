@@ -1,4 +1,4 @@
-use clap::{App, Arg, SubCommand};
+use clap::{AppSettings, Parser, Subcommand};
 use colored::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -9,6 +9,60 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 
 type Project = HashMap<String, String>;
+
+/// Normalize all your commands by wrapping them in a taco
+#[derive(Parser, Debug)]
+#[clap(about, version, author)]
+struct Cli {
+    /// The current working directory
+    #[clap(long, default_value = ".", global = true)]
+    pwd: String,
+
+    /// Print the current command instead of executing it
+    #[clap(short, long)]
+    print: bool,
+
+    /// The alias to execute
+    alias: Option<String>,
+    /// The arguments to pass to the command
+    arguments: Vec<String>,
+
+    /// The changelog filename
+    #[clap(short, long, default_value = "CHANGELOG.md", global = true)]
+    filename: String,
+
+    /// The subcommand to run
+    #[clap(subcommand)]
+    command: Option<Commands>,
+}
+
+#[derive(Subcommand, Debug)]
+enum Commands {
+    /// Add a new command
+    #[clap(setting(AppSettings::ArgRequiredElseHelp))]
+    Add {
+        /// The name of the alias for the command to run
+        name: String,
+
+        /// The actual command to run
+        arguments: Vec<String>,
+    },
+
+    /// Remove an existing command
+    #[clap(name = "rm", setting(AppSettings::ArgRequiredElseHelp))]
+    Remove {
+        /// The name of the alias to remove
+        name: String,
+    },
+
+    /// Print all the commands
+    #[clap(setting(AppSettings::ArgRequiredElseHelp))]
+    Print {
+        /// Print commands in JSON format
+        #[clap(short, long)]
+        json: bool,
+    },
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Config {
@@ -78,147 +132,58 @@ impl Config {
 }
 
 fn main() -> Result<(), Error> {
-    let current_dir = std::env::current_dir()?;
-
-    let mut cli = App::new("Taco")
-        .version("1.0")
-        .arg(
-            Arg::with_name("print")
-                .short("p")
-                .long("print")
-                .takes_value(false),
-        )
-        .arg(
-            Arg::with_name("pwd")
-                .long("pwd")
-                .help("The current working directory")
-                .default_value(current_dir.to_str().unwrap())
-                .takes_value(true)
-                .global(true),
-        )
-        .arg(Arg::with_name("command").takes_value(false))
-        .arg(
-            Arg::with_name("arguments")
-                .multiple(true)
-                .takes_value(false)
-                .help("Arguments to passthrough"),
-        )
-        .subcommand(
-            SubCommand::with_name("add")
-                .about("Add a new command")
-                .arg(
-                    Arg::with_name("name")
-                        .takes_value(true)
-                        .help("Name of the command"),
-                )
-                .arg(
-                    Arg::with_name("arguments")
-                        .multiple(true)
-                        .takes_value(false)
-                        .help("Command to execute"),
-                ),
-        )
-        .subcommand(
-            SubCommand::with_name("rm")
-                .about("Delete an existing command")
-                .arg(
-                    Arg::with_name("name")
-                        .takes_value(true)
-                        .help("Name of the command"),
-                ),
-        )
-        .subcommand(
-            SubCommand::with_name("print")
-                .about("Print the commands")
-                .arg(
-                    Arg::with_name("json")
-                        .help("Prints commands in JSON format")
-                        .long("json")
-                        .takes_value(false),
-                ),
-        );
-
+    let args = Cli::parse();
     ensure_config_exists();
 
-    let matches = cli.clone().get_matches();
+    let pwd = fs::canonicalize(&args.pwd)?.to_str().unwrap().to_string();
 
-    match matches.subcommand() {
-        ("add", Some(add_matches)) => {
-            let pwd = matches.value_of("pwd").unwrap();
+    match &args.command {
+        Some(Commands::Add { name, arguments }) => {
             let mut config = read_config();
+            let command = &arguments.join(" ");
 
-            match add_matches.value_of("name") {
-                Some(name) => {
-                    let command = add_matches
-                        .values_of("arguments")
-                        .unwrap()
-                        .collect::<Vec<_>>()
-                        .join(" ");
+            match config.get_project(&pwd) {
+                Some(project) => {
+                    if let Some(existing) = project.get(name) {
+                        println!(
+                            "Command \"{}\" already exists with value \"{}\"",
+                            name.blue(),
+                            existing.blue()
+                        );
 
-                    match config.get_project(pwd) {
-                        Some(project) => {
-                            if let Some(existing) = project.get(name) {
-                                println!(
-                                    "Command \"{}\" already exists with value \"{}\"",
-                                    name.blue(),
-                                    existing.blue()
-                                );
-
-                                match confirm(&format!(
-                                    "Do you want to override it with \"{}\"?",
-                                    command.blue()
-                                )) {
-                                    true => {
-                                        // Passthrough
-                                    }
-                                    _ => {
-                                        println!("{}", "Aborted!".red());
-                                        return Ok(());
-                                    }
-                                }
-                            }
-
-                            // Akshually insert the new command.
-                            project.insert(name.to_string(), command.clone());
-                            write_config(&config);
-                        }
-                        None => {
-                            let mut project = HashMap::new();
-                            project.insert(name.to_string(), command.clone());
-                            config.projects.insert(pwd.to_string(), project);
-                            write_config(&config);
+                        if !confirm(&format!(
+                            "Do you want to override it with \"{}\"?",
+                            command.blue()
+                        )) {
+                            println!("{}", "Aborted!".red());
+                            return Ok(());
                         }
                     }
 
-                    println!(
-                        "Aliased \"{}\" to \"{}\" in {}",
-                        name.blue(),
-                        &command.blue(),
-                        pwd.dimmed()
-                    );
+                    // Akshually insert the new command.
+                    project.insert(name.to_string(), command.clone());
+                    write_config(&config);
                 }
                 None => {
-                    println!("No command provided.\nUsage:\n");
-                    println!("  taco add {} -- {}", "name".blue(), "commands".blue());
-
-                    println!("\nExample:");
-                    println!(
-                        "  taco add {} -- {}\n",
-                        "publish".blue(),
-                        "npm publish".blue()
-                    );
+                    let mut project = HashMap::new();
+                    project.insert(name.to_string(), command.clone());
+                    config.projects.insert(pwd.to_string(), project);
+                    write_config(&config);
                 }
             }
 
+            println!(
+                "Aliased \"{}\" to \"{}\" in {}",
+                name.blue(),
+                &command.blue(),
+                pwd.dimmed()
+            );
             Ok(())
         }
-        ("rm", Some(rm_matches)) => {
-            let pwd = matches.value_of("pwd").unwrap();
+        Some(Commands::Remove { name }) => {
             let mut config = read_config();
 
-            let name = rm_matches.value_of("name").unwrap();
-
-            match config.get_project(pwd) {
+            match config.get_project(&pwd) {
                 Some(project) => {
                     match project.remove(name) {
                         Some(_) => {
@@ -244,78 +209,74 @@ fn main() -> Result<(), Error> {
 
             Ok(())
         }
-        ("print", Some(print_matches)) => {
-            let pwd = matches.value_of("pwd").unwrap();
+        Some(Commands::Print { json }) => {
             let mut config = read_config();
 
-            if print_matches.is_present("json") {
+            if *json {
                 println!(
                     "{}",
                     serde_json::to_string_pretty(
-                        config.resolve_project(pwd).unwrap_or(&mut HashMap::new())
+                        config.resolve_project(&pwd).unwrap_or(&mut HashMap::new())
                     )
                     .unwrap()
                 );
             } else {
-                print_project_commands(config.resolve_project(pwd).unwrap_or(&mut HashMap::new()));
+                print_project_commands(config.resolve_project(&pwd).unwrap_or(&mut HashMap::new()));
             }
 
             Ok(())
         }
-        _ => {
-            match matches.value_of("command") {
-                Some(command) => {
-                    let mut config = read_config();
-                    let pwd = matches.value_of("pwd").unwrap();
+        None => {
+            if args.alias.is_none() {
+                print_help()?;
+            }
 
-                    if let Some(project) = config.resolve_project(pwd) {
-                        match project.get_mut(command) {
-                            Some(args) => {
-                                if matches.is_present("print") {
-                                    // Actually print the command
-                                    println!("{}", args);
-                                } else {
-                                    // Execute the command
-                                    let mut cmd = Command::new("zsh");
-                                    cmd.current_dir(pwd);
+            let mut config = read_config();
+            let alias = &args.alias.unwrap();
+            let pwd = &args.pwd;
+            let print = args.print;
+            let arguments = args.arguments;
 
-                                    // Passthrough arguments
-                                    if let Some(passthrough) = matches.values_of("arguments") {
-                                        let command = passthrough.collect::<Vec<_>>().join(" ");
+            if let Some(project) = config.resolve_project(pwd) {
+                match project.get_mut(alias) {
+                    Some(args) => {
+                        if print {
+                            // Actually print the command
+                            println!("{}", args);
+                        } else {
+                            // Execute the command
+                            let mut cmd = Command::new(
+                                std::env::var("SHELL").unwrap_or_else(|_| "sh".to_string()),
+                            );
+                            cmd.current_dir(pwd);
 
-                                        // Attach arguments to existing command
-                                        if !command.is_empty() {
-                                            args.push(' ');
-                                            args.push_str(&command);
-                                        }
-                                    }
+                            // Passthrough arguments
+                            let command = arguments.join(" ");
 
-                                    cmd.arg("-c").arg(args);
-
-                                    cmd.stdin(Stdio::inherit())
-                                        .stdout(Stdio::inherit())
-                                        .stderr(Stdio::inherit())
-                                        .output()
-                                        .expect("failed to execute process");
-                                }
+                            // Attach arguments to existing command
+                            if !command.is_empty() {
+                                args.push(' ');
+                                args.push_str(&command);
                             }
-                            None => {
-                                // Project exists but command doesn't.
-                                println!("Command `{}` does not exist.\n", command.blue());
-                                print_project_commands(project);
-                            }
+
+                            cmd.arg("-c").arg(args);
+
+                            cmd.stdin(Stdio::inherit())
+                                .stdout(Stdio::inherit())
+                                .stderr(Stdio::inherit())
+                                .output()
+                                .expect("failed to execute process");
                         }
-                    } else {
-                        // Command provided, but project doesn't exist, just print the help
-                        cli.print_help().unwrap();
-                        println!();
+                    }
+                    None => {
+                        // Project exists but command doesn't.
+                        println!("Command `{}` does not exist.\n", alias.blue());
+                        print_project_commands(project);
                     }
                 }
-                None => {
-                    // No command has been specified, just print the help
-                    cli.print_help().unwrap();
-                    println!();
-                }
+            } else {
+                // Command provided, but project doesn't exist, just print the help
+                print_help()?;
             }
 
             Ok(())
@@ -363,6 +324,20 @@ fn confirm(message: &str) -> bool {
     println!();
 
     s.trim() == "y" || s.trim() == "Y"
+}
+
+fn print_help() -> Result<(), Error> {
+    let mut cmd = Command::new(std::env::current_exe()?);
+
+    cmd.arg("--help");
+
+    cmd.stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .output()
+        .expect("failed to execute process");
+
+    std::process::exit(0);
 }
 
 // Currently using a library that automatically gives you the
