@@ -24,6 +24,7 @@ struct Cli {
 
     /// The alias to execute
     alias: Option<String>,
+
     /// The arguments to pass to the command
     arguments: Vec<String>,
 
@@ -66,39 +67,43 @@ enum Commands {
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Config {
+    /// A project can map to other projects so that it can inherit values from that other project.
+    /// This allows you to define some common projects like "webdev" or "rust" or anything you
+    /// want.
+    #[serde(default)]
+    aliases: HashMap<String, Vec<String>>,
+
     /// A map keyed by the location of each project, the value is another map with key/value pairs
     /// for the command name and the command + arguments to run.
+    #[serde(default)]
     projects: HashMap<String, Project>,
-
-    /// This is not ideal, but currently the resolved HashMap is used to combine the current
-    /// project's commands, merged with all the commands of parent projects.
-    #[serde(skip)]
-    resolved: HashMap<String, Project>,
 }
 
 impl Config {
     fn new() -> Self {
         Config {
+            aliases: HashMap::new(),
             projects: HashMap::new(),
-            resolved: HashMap::new(),
         }
     }
 
     /// Get the current project's commands.
     /// Note: it will not merge the commands with any parent projects.
-    fn get_project(&mut self, project: &str) -> Option<&mut Project> {
+    fn get_project_mut(&mut self, project: &str) -> Option<&mut Project> {
         let path = fs::canonicalize(project).unwrap();
         self.projects.get_mut(path.to_str().unwrap())
     }
 
     /// Get the resolved commands, these are the commands of the current project, merged with all
     /// the parent projects.
-    fn resolve_project(&mut self, project: &str) -> Option<&mut Project> {
+    fn resolve_project(&mut self, project: &str) -> Project {
         let path = fs::canonicalize(project).unwrap();
         let project = path.to_str().unwrap();
+        let mut resolved: HashMap<String, Project> = HashMap::new();
 
         let mut commands: Project = HashMap::new();
 
+        // Commands + aliases from parent directories
         let mut parent: Vec<&str> = vec![];
         for part in path.iter() {
             parent.push(part.to_str().unwrap());
@@ -117,17 +122,31 @@ impl Config {
             }
         }
 
-        if !commands.is_empty() && !self.resolved.contains_key(project) {
-            self.resolved.insert(project.to_owned(), HashMap::new());
+        if !commands.is_empty() && !resolved.contains_key(project) {
+            resolved.insert(project.to_owned(), HashMap::new());
         }
 
-        if let Some(project) = self.resolved.get_mut(project) {
+        if let Some(project) = resolved.get_mut(project) {
             for (key, value) in &commands {
                 project.insert(key.to_owned(), value.to_owned());
             }
         }
 
-        self.resolved.get_mut(project)
+        // aliases from other directories
+        // let main = resolved.get_mut(project);
+        if let Some(other) = self.aliases.get(project) {
+            for alias in other {
+                if let Some(project) = self.projects.get(alias) {
+                    for (key, value) in project {
+                        if !commands.contains_key(key) {
+                            commands.insert(key.to_owned(), value.to_owned());
+                        }
+                    }
+                }
+            }
+        }
+
+        commands
     }
 }
 
@@ -142,7 +161,7 @@ fn main() -> Result<(), Error> {
             let mut config = read_config();
             let command = &arguments.join(" ");
 
-            match config.get_project(&pwd) {
+            match config.get_project_mut(&pwd) {
                 Some(project) => {
                     if let Some(existing) = project.get(name) {
                         println!(
@@ -183,7 +202,7 @@ fn main() -> Result<(), Error> {
         Some(Commands::Remove { name }) => {
             let mut config = read_config();
 
-            match config.get_project(&pwd) {
+            match config.get_project_mut(&pwd) {
                 Some(project) => {
                     match project.remove(name) {
                         Some(_) => {
@@ -215,13 +234,10 @@ fn main() -> Result<(), Error> {
             if *json {
                 println!(
                     "{}",
-                    serde_json::to_string_pretty(
-                        config.resolve_project(&pwd).unwrap_or(&mut HashMap::new())
-                    )
-                    .unwrap()
+                    serde_json::to_string_pretty(&config.resolve_project(&pwd)).unwrap()
                 );
             } else {
-                print_project_commands(config.resolve_project(&pwd).unwrap_or(&mut HashMap::new()));
+                print_project_commands(&config.resolve_project(&pwd))
             }
 
             Ok(())
@@ -236,47 +252,43 @@ fn main() -> Result<(), Error> {
             let pwd = &args.pwd;
             let print = args.print;
             let arguments = args.arguments;
+            let mut project = config.resolve_project(pwd);
 
-            if let Some(project) = config.resolve_project(pwd) {
-                match project.get_mut(alias) {
-                    Some(args) => {
-                        if print {
-                            // Actually print the command
-                            println!("{}", args);
-                        } else {
-                            // Execute the command
-                            let mut cmd = Command::new(
-                                std::env::var("SHELL").unwrap_or_else(|_| "sh".to_string()),
-                            );
-                            cmd.current_dir(pwd);
+            match project.get_mut(alias) {
+                Some(args) => {
+                    if print {
+                        // Actually print the command
+                        println!("{}", args);
+                    } else {
+                        // Execute the command
+                        let mut cmd = Command::new(
+                            std::env::var("SHELL").unwrap_or_else(|_| "sh".to_string()),
+                        );
+                        cmd.current_dir(pwd);
 
-                            // Passthrough arguments
-                            let command = arguments.join(" ");
+                        // Passthrough arguments
+                        let command = arguments.join(" ");
 
-                            // Attach arguments to existing command
-                            if !command.is_empty() {
-                                args.push(' ');
-                                args.push_str(&command);
-                            }
-
-                            cmd.arg("-c").arg(args);
-
-                            cmd.stdin(Stdio::inherit())
-                                .stdout(Stdio::inherit())
-                                .stderr(Stdio::inherit())
-                                .output()
-                                .expect("failed to execute process");
+                        // Attach arguments to existing command
+                        if !command.is_empty() {
+                            args.push(' ');
+                            args.push_str(&command);
                         }
-                    }
-                    None => {
-                        // Project exists but command doesn't.
-                        println!("Command `{}` does not exist.\n", alias.blue());
-                        print_project_commands(project);
+
+                        cmd.arg("-c").arg(args);
+
+                        cmd.stdin(Stdio::inherit())
+                            .stdout(Stdio::inherit())
+                            .stderr(Stdio::inherit())
+                            .output()
+                            .expect("failed to execute process");
                     }
                 }
-            } else {
-                // Command provided, but project doesn't exist, just print the help
-                print_help()?;
+                None => {
+                    // Project exists but command doesn't.
+                    println!("Command `{}` does not exist.\n", alias.blue());
+                    print_project_commands(&project);
+                }
             }
 
             Ok(())
