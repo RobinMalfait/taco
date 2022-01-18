@@ -1,4 +1,5 @@
 use clap::{AppSettings, Parser, Subcommand};
+use color_eyre::eyre::{eyre, Result};
 use colored::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -89,18 +90,19 @@ impl Config {
 
     /// Get the current project's commands.
     /// Note: it will not merge the commands with any parent projects.
-    fn get_project_mut(&mut self, project: &str) -> Option<&mut Project> {
-        let path = fs::canonicalize(project).unwrap();
-        self.projects.get_mut(path.to_str().unwrap())
+    fn get_project_mut(&mut self, project: &str) -> Result<&mut Project> {
+        let path = fs::canonicalize(project)?;
+
+        match self.projects.get_mut(path.to_str().unwrap()) {
+            Some(project) => Ok(project),
+            None => Err(eyre!("Project not found: {}", project)),
+        }
     }
 
     /// Get the resolved commands, these are the commands of the current project, merged with all
     /// the parent projects.
-    fn resolve_project(&mut self, project: &str) -> Project {
-        let path = fs::canonicalize(project).unwrap();
-        let project = path.to_str().unwrap();
-        let mut resolved: HashMap<String, Project> = HashMap::new();
-
+    fn resolve_project(&mut self, project: &str) -> Result<Project> {
+        let path = fs::canonicalize(project)?;
         let mut commands: Project = HashMap::new();
 
         // Commands + aliases from parent directories
@@ -136,19 +138,19 @@ impl Config {
     }
 }
 
-fn main() -> Result<(), Error> {
+fn main() -> Result<()> {
     let args = Cli::parse();
-    ensure_config_exists();
+    ensure_config_exists()?;
 
     let pwd = fs::canonicalize(&args.pwd)?.to_str().unwrap().to_string();
 
     match &args.command {
         Some(Commands::Add { name, arguments }) => {
-            let mut config = read_config();
+            let mut config = read_config()?;
             let command = &arguments.join(" ");
 
             match config.get_project_mut(&pwd) {
-                Some(project) => {
+                Ok(project) => {
                     if let Some(existing) = project.get(name) {
                         println!(
                             "Command \"{}\" already exists with value \"{}\"",
@@ -167,13 +169,13 @@ fn main() -> Result<(), Error> {
 
                     // Akshually insert the new command.
                     project.insert(name.to_string(), command.clone());
-                    write_config(&config);
+                    write_config(&config)?;
                 }
-                None => {
+                Err(_) => {
                     let mut project = HashMap::new();
                     project.insert(name.to_string(), command.clone());
                     config.projects.insert(pwd.to_string(), project);
-                    write_config(&config);
+                    write_config(&config)?;
                 }
             }
 
@@ -186,44 +188,33 @@ fn main() -> Result<(), Error> {
             Ok(())
         }
         Some(Commands::Remove { name }) => {
-            let mut config = read_config();
-
-            match config.get_project_mut(&pwd) {
-                Some(project) => {
-                    match project.remove(name) {
-                        Some(_) => {
-                            write_config(&config);
-                            println!("Removed alias \"{}\"\n", name.blue());
-                        }
-                        None => {
-                            println!("Alias \"{}\" does not exist.\n", name.blue());
-                            print_project_commands(project);
-                        }
-                    }
-
-                    write_config(&config);
+            let mut config = read_config()?;
+            let project = config.get_project_mut(&pwd)?;
+            match project.remove(name) {
+                Some(_) => {
+                    write_config(&config)?;
+                    println!("Removed alias \"{}\"\n", name.blue());
                 }
                 None => {
-                    println!(
-                        "Project \"{}\" does not exist, therefore \"{}\" doesn't exist either.",
-                        pwd.dimmed(),
-                        name.blue()
-                    );
+                    println!("Alias \"{}\" does not exist.\n", name.blue());
+                    print_project_commands(project);
                 }
             }
+
+            write_config(&config)?;
 
             Ok(())
         }
         Some(Commands::Print { json }) => {
-            let mut config = read_config();
+            let mut config = read_config()?;
 
             if *json {
                 println!(
                     "{}",
-                    serde_json::to_string_pretty(&config.resolve_project(&pwd)).unwrap()
+                    serde_json::to_string_pretty(&config.resolve_project(&pwd)?)?
                 );
             } else {
-                print_project_commands(&config.resolve_project(&pwd))
+                print_project_commands(&config.resolve_project(&pwd)?)
             }
 
             Ok(())
@@ -233,12 +224,12 @@ fn main() -> Result<(), Error> {
                 print_help()?;
             }
 
-            let mut config = read_config();
+            let mut config = read_config()?;
             let alias = &args.alias.unwrap();
             let pwd = &args.pwd;
             let print = args.print;
             let arguments = args.arguments;
-            let mut project = config.resolve_project(pwd);
+            let mut project = config.resolve_project(pwd)?;
 
             match project.get_mut(alias) {
                 Some(args) => {
@@ -353,29 +344,32 @@ fn config_file_location() -> String {
         .to_owned();
 }
 
-fn ensure_config_exists() {
+fn ensure_config_exists() -> Result<()> {
     let file_path = config_file_location();
     let location = Path::new(&file_path);
 
     if !location.exists() {
         // Ensure parent directories exist
         let prefix = location.parent().unwrap();
-        std::fs::create_dir_all(prefix).unwrap();
+        std::fs::create_dir_all(prefix)?;
 
         // Write an empty config file
-        write_config(&Config::new());
+        write_config(&Config::new())?;
     }
+
+    Ok(())
 }
 
-fn read_config() -> Config {
+fn read_config() -> Result<Config> {
     let file_path = config_file_location();
-    let file = File::open(file_path).unwrap();
+    let file = File::open(file_path)?;
     let config: Config = serde_json::from_reader(file).expect("JSON was not well-formatted");
 
-    config
+    Ok(config)
 }
 
-fn write_config(config: &Config) {
+fn write_config(config: &Config) -> Result<()> {
     let file_path = config_file_location();
-    std::fs::write(file_path, serde_json::to_string_pretty(&config).unwrap()).unwrap();
+    std::fs::write(file_path, serde_json::to_string_pretty(&config)?)?;
+    Ok(())
 }
