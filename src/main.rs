@@ -114,6 +114,18 @@ impl Config {
                 project_path = (&project_path)[1..].to_owned();
             }
 
+            if let Some(other) = self.aliases.get(&project_path) {
+                for alias in other {
+                    if let Some(project) = self.projects.get(alias) {
+                        for (key, value) in project {
+                            if !commands.contains_key(key) {
+                                commands.insert(key.to_owned(), value.to_owned());
+                            }
+                        }
+                    }
+                }
+            }
+
             // Merge commands with parent
             if self.projects.contains_key(&project_path) {
                 for (key, value) in self.projects.get_mut(&project_path).unwrap() {
@@ -132,8 +144,6 @@ impl Config {
             }
         }
 
-        // aliases from other directories
-        // let main = resolved.get_mut(project);
         if let Some(other) = self.aliases.get(project) {
             for alias in other {
                 if let Some(project) = self.projects.get(alias) {
