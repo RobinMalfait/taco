@@ -118,9 +118,7 @@ impl Config {
                 for alias in other {
                     if let Some(project) = self.projects.get(alias) {
                         for (key, value) in project {
-                            if !commands.contains_key(key) {
-                                commands.insert(key.to_owned(), value.to_owned());
-                            }
+                            commands.insert(key.to_owned(), value.to_owned());
                         }
                     }
                 }
@@ -134,29 +132,7 @@ impl Config {
             }
         }
 
-        if !commands.is_empty() && !resolved.contains_key(project) {
-            resolved.insert(project.to_owned(), HashMap::new());
-        }
-
-        if let Some(project) = resolved.get_mut(project) {
-            for (key, value) in &commands {
-                project.insert(key.to_owned(), value.to_owned());
-            }
-        }
-
-        if let Some(other) = self.aliases.get(project) {
-            for alias in other {
-                if let Some(project) = self.projects.get(alias) {
-                    for (key, value) in project {
-                        if !commands.contains_key(key) {
-                            commands.insert(key.to_owned(), value.to_owned());
-                        }
-                    }
-                }
-            }
-        }
-
-        commands
+        Ok(commands)
     }
 }
 
