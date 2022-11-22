@@ -1,15 +1,15 @@
-use clap::{AppSettings, Parser, Subcommand};
+use clap::{Parser, Subcommand};
 use color_eyre::eyre::{eyre, Result};
 use colored::*;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::fs;
 use std::fs::File;
 use std::io::{Error, Write};
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-type Project = HashMap<String, String>;
+type Project = BTreeMap<String, String>;
 
 /// Normalize all your commands by wrapping them in a taco
 #[derive(Parser, Debug)]
@@ -41,7 +41,6 @@ struct Cli {
 #[derive(Subcommand, Debug)]
 enum Commands {
     /// Add a new command
-    #[clap(setting(AppSettings::ArgRequiredElseHelp))]
     Add {
         /// The name of the alias for the command to run
         name: String,
@@ -50,15 +49,20 @@ enum Commands {
         arguments: Vec<String>,
     },
 
+    /// Alias the current project to a predefined project
+    Alias {
+        /// The name of the alias
+        name: String,
+    },
+
     /// Remove an existing command
-    #[clap(name = "rm", setting(AppSettings::ArgRequiredElseHelp))]
+    #[clap(name = "rm")]
     Remove {
         /// The name of the alias to remove
         name: String,
     },
 
     /// Print all the commands
-    #[clap(setting(AppSettings::ArgRequiredElseHelp))]
     Print {
         /// Print commands in JSON format
         #[clap(short, long)]
@@ -72,20 +76,34 @@ struct Config {
     /// This allows you to define some common projects like "webdev" or "rust" or anything you
     /// want.
     #[serde(default)]
-    aliases: HashMap<String, Vec<String>>,
+    aliases: BTreeMap<String, Vec<String>>,
 
     /// A map keyed by the location of each project, the value is another map with key/value pairs
     /// for the command name and the command + arguments to run.
     #[serde(default)]
-    projects: HashMap<String, Project>,
+    projects: BTreeMap<String, Project>,
 }
 
 impl Config {
     fn new() -> Self {
         Config {
-            aliases: HashMap::new(),
-            projects: HashMap::new(),
+            aliases: BTreeMap::new(),
+            projects: BTreeMap::new(),
         }
+    }
+
+    /// Get the list of aliases for a project
+    fn add_alias(&mut self, project: &str, alias: &str) -> Result<()> {
+        let path = fs::canonicalize(project)?;
+        let key = path.to_str().unwrap();
+
+        if !self.aliases.contains_key(key) {
+            self.aliases.insert(key.to_string(), vec![]);
+        }
+
+        self.aliases.get_mut(key).unwrap().push(alias.to_string());
+
+        Ok(())
     }
 
     /// Get the current project's commands.
@@ -103,7 +121,7 @@ impl Config {
     /// the parent projects.
     fn resolve_project(&mut self, project: &str) -> Result<Project> {
         let path = fs::canonicalize(project)?;
-        let mut commands: Project = HashMap::new();
+        let mut commands: Project = BTreeMap::new();
 
         // Commands + aliases from parent directories
         let mut parent: Vec<&str> = vec![];
@@ -172,7 +190,7 @@ fn main() -> Result<()> {
                     write_config(&config)?;
                 }
                 Err(_) => {
-                    let mut project = HashMap::new();
+                    let mut project = BTreeMap::new();
                     project.insert(name.to_string(), command.clone());
                     config.projects.insert(pwd.to_string(), project);
                     write_config(&config)?;
@@ -185,6 +203,13 @@ fn main() -> Result<()> {
                 &command.blue(),
                 pwd.dimmed()
             );
+            Ok(())
+        }
+        Some(Commands::Alias { name }) => {
+            let mut config = read_config()?;
+            config.add_alias(&pwd, name)?;
+            write_config(&config)?;
+            println!("Added \"{}\" capabilities in {}", name.blue(), pwd.dimmed());
             Ok(())
         }
         Some(Commands::Remove { name }) => {
