@@ -279,11 +279,17 @@ fn main() -> Result<()> {
 
                         cmd.arg("-c").arg(args);
 
-                        cmd.stdin(Stdio::inherit())
+                        if let Some(code) = cmd
+                            .stdin(Stdio::inherit())
                             .stdout(Stdio::inherit())
                             .stderr(Stdio::inherit())
                             .output()
-                            .expect("failed to execute process");
+                            .expect("failed to execute process")
+                            .status
+                            .code()
+                        {
+                            std::process::exit(code);
+                        }
                     }
                 }
                 None => {
