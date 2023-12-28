@@ -29,10 +29,6 @@ struct Cli {
     /// The arguments to pass to the command
     arguments: Vec<String>,
 
-    /// The changelog filename
-    #[clap(short, long, default_value = "CHANGELOG.md", global = true)]
-    filename: String,
-
     /// The subcommand to run
     #[clap(subcommand)]
     command: Option<Commands>,
