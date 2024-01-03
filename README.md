@@ -72,8 +72,6 @@ This is how I use it personally:
 
 - This is a Rust project and the binaries are not published
   anywhere. This means that you need to have Rust/Cargo installed.
-- This tool talks to the GitHub API, therefore you need to have a
-  `GITHUB_API_TOKEN` environment variable.
 
 ## Installation
 
