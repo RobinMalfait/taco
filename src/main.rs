@@ -258,9 +258,10 @@ fn main() -> Result<()> {
                     println!("{}", args);
                 }
                 Some(args) => {
+                    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
+
                     // Execute the command
-                    let mut cmd =
-                        Command::new(std::env::var("SHELL").unwrap_or_else(|_| "sh".to_string()));
+                    let mut cmd = Command::new(&shell);
                     cmd.current_dir(pwd);
 
                     // Passthrough arguments
@@ -272,7 +273,14 @@ fn main() -> Result<()> {
                         args.push_str(&command);
                     }
 
-                    cmd.arg("-c").arg(args);
+                    // Add common flags for different shells
+                    let cmd = match shell.as_str() {
+                        "/bin/zsh" => cmd.arg("-i").arg("-c"),
+                        "/bin/sh" => cmd.arg("-c"),
+                        _ => &mut cmd,
+                    };
+
+                    cmd.arg(args);
 
                     if let Some(code) = cmd
                         .stdin(Stdio::inherit())
