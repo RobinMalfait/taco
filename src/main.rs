@@ -253,39 +253,37 @@ fn main() -> Result<()> {
             let mut project = config.resolve_project(pwd)?;
 
             match project.get_mut(alias) {
+                Some(args) if print => {
+                    // Actually print the command
+                    println!("{}", args);
+                }
                 Some(args) => {
-                    if print {
-                        // Actually print the command
-                        println!("{}", args);
-                    } else {
-                        // Execute the command
-                        let mut cmd = Command::new(
-                            std::env::var("SHELL").unwrap_or_else(|_| "sh".to_string()),
-                        );
-                        cmd.current_dir(pwd);
+                    // Execute the command
+                    let mut cmd =
+                        Command::new(std::env::var("SHELL").unwrap_or_else(|_| "sh".to_string()));
+                    cmd.current_dir(pwd);
 
-                        // Passthrough arguments
-                        let command = arguments.join(" ");
+                    // Passthrough arguments
+                    let command = arguments.join(" ");
 
-                        // Attach arguments to existing command
-                        if !command.is_empty() {
-                            args.push(' ');
-                            args.push_str(&command);
-                        }
+                    // Attach arguments to existing command
+                    if !command.is_empty() {
+                        args.push(' ');
+                        args.push_str(&command);
+                    }
 
-                        cmd.arg("-c").arg(args);
+                    cmd.arg("-c").arg(args);
 
-                        if let Some(code) = cmd
-                            .stdin(Stdio::inherit())
-                            .stdout(Stdio::inherit())
-                            .stderr(Stdio::inherit())
-                            .output()
-                            .expect("failed to execute process")
-                            .status
-                            .code()
-                        {
-                            std::process::exit(code);
-                        }
+                    if let Some(code) = cmd
+                        .stdin(Stdio::inherit())
+                        .stdout(Stdio::inherit())
+                        .stderr(Stdio::inherit())
+                        .output()
+                        .expect("failed to execute process")
+                        .status
+                        .code()
+                    {
+                        std::process::exit(code);
                     }
                 }
                 None => {
