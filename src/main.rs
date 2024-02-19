@@ -362,13 +362,13 @@ fn print_help() -> Result<(), Error> {
 // `$HOME/Library/Application Support` instead, which sort of makes sense but I don't want that...
 // Therefore doing this manually.
 fn config_file_location() -> String {
-    return Path::new(&dirs::home_dir().unwrap())
+    Path::new(&dirs::home_dir().unwrap())
         .join(".config")
         .join("taco")
         .join("taco.json")
         .to_str()
         .unwrap()
-        .to_owned();
+        .to_owned()
 }
 
 fn ensure_config_exists() -> Result<()> {
