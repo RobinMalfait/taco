@@ -47,6 +47,12 @@ enum Commands {
         arguments: Option<Vec<String>>,
     },
 
+    /// Edit a command
+    Edit {
+        /// The name of the alias to edit
+        name: String,
+    },
+
     /// Alias the current project to a predefined project
     Alias {
         /// The name of the alias
@@ -238,11 +244,10 @@ fn main() -> Result<()> {
                     };
 
                     let data: Vec<_> = data
+                        .trim()
                         .lines()
                         .map(|line| line.trim())
-                        .filter(|line| !line.is_empty())
                         .filter(|line| !line.starts_with('#'))
-                        .map(|line| line.to_string())
                         .collect();
 
                     if data.is_empty() {
@@ -250,7 +255,7 @@ fn main() -> Result<()> {
                         return Ok(());
                     }
 
-                    data.join("; ")
+                    data.join("\n")
                 }
             };
 
@@ -272,6 +277,66 @@ fn main() -> Result<()> {
                         }
                     }
 
+                    // Akshually insert the new command.
+                    project.insert(name.to_string(), command.clone());
+                    write_config(&config)?;
+                }
+                Err(_) => {
+                    let mut project = BTreeMap::new();
+                    project.insert(name.to_string(), command.clone());
+                    config.projects.insert(pwd.to_string(), project);
+                    write_config(&config)?;
+                }
+            }
+
+            println!(
+                "Aliased \"{}\" to \"{}\" in {}",
+                name.blue(),
+                &command.blue(),
+                pwd.dimmed()
+            );
+        }
+        Commands::Edit { name } => {
+            let mut config = read_config()?;
+
+            let combined_project = config.resolve_project(&pwd)?;
+            let Some(current_command) = combined_project.get(&name) else {
+                println!(
+                    "{}",
+                    format!("Command \"{}\" does not exist, cannot edit it.", name).red()
+                );
+                return Ok(());
+            };
+
+            let Some(data) = rich_edit(Some(&format!(
+                "{}\n# Enter the command you want to alias here.\n# Lines starting with '#' are ignored.\n",
+                current_command
+            ))) else {
+                println!("{}", "Aborted!".red());
+                return Ok(());
+            };
+
+            let data: Vec<_> = data
+                .trim()
+                .lines()
+                .map(|line| line.trim())
+                .filter(|line| !line.starts_with('#'))
+                .collect();
+
+            if data.is_empty() {
+                println!("{}", "Aborted!".red());
+                return Ok(());
+            }
+
+            let command = data.join("\n");
+
+            if command == *current_command {
+                println!("{}", "No changes made, aborting.".dimmed());
+                return Ok(());
+            }
+
+            match config.get_project_mut(&pwd) {
+                Ok(project) => {
                     // Akshually insert the new command.
                     project.insert(name.to_string(), command.clone());
                     write_config(&config)?;
