@@ -122,7 +122,7 @@ This will open your default editor (`$EDITOR` env variable) to input the command
 taco edit ls
 ```
 
-This will open your default editor (`$EDITOR` env variable) to edit the command. THe current command will be pre-filled. Lines with `#` at the start will be ignored.
+This will open your default editor (`$EDITOR` env variable) to edit the command. The current command will be pre-filled. Lines with `#` at the start will be ignored.
 
 #### Execute – `taco {name} -- {passthrough arguments}`
 
