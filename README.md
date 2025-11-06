@@ -108,6 +108,22 @@ taco add ls -- ls -lah
 # Aliased "ls" to "ls -lah" in /Users/robin
 ```
 
+#### Add – `taco add {name}`
+
+```sh
+taco add ls
+```
+
+This will open your default editor (`$EDITOR` env variable) to input the command. Lines with `#` at the start will be ignored.
+
+#### Edit – `taco edit {name}`
+
+```sh
+taco edit ls
+```
+
+This will open your default editor (`$EDITOR` env variable) to edit the command. THe current command will be pre-filled. Lines with `#` at the start will be ignored.
+
 #### Execute – `taco {name} -- {passthrough arguments}`
 
 ```sh
