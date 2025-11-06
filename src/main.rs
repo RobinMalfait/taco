@@ -160,8 +160,72 @@ fn main() -> Result<()> {
 
     let pwd = fs::canonicalize(&args.pwd)?.to_str().unwrap().to_string();
 
-    match args.command {
-        Some(Commands::Add { name, arguments }) => {
+    let Some(command) = args.command else {
+        if args.alias.is_none() {
+            print_help()?;
+        }
+
+        let mut config = read_config()?;
+        let alias = &args.alias.unwrap();
+        let pwd = &args.pwd;
+        let print = args.print;
+        let arguments = args.arguments;
+        let mut project = config.resolve_project(pwd)?;
+
+        match project.get_mut(alias) {
+            Some(args) if print => {
+                // Actually print the command
+                println!("{}", args);
+            }
+            Some(args) => {
+                let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
+
+                // Execute the command
+                let mut cmd = Command::new(&shell);
+                cmd.current_dir(pwd);
+
+                // Passthrough arguments
+                let command = arguments.join(" ");
+
+                // Attach arguments to existing command
+                if !command.is_empty() {
+                    args.push(' ');
+                    args.push_str(&command);
+                }
+
+                // Add common flags for different shells
+                let cmd = match shell.as_str() {
+                    "/bin/zsh" => cmd.arg("-i").arg("-c"),
+                    "/bin/sh" => cmd.arg("-c"),
+                    _ => &mut cmd,
+                };
+
+                cmd.arg(args);
+
+                if let Some(code) = cmd
+                    .stdin(Stdio::inherit())
+                    .stdout(Stdio::inherit())
+                    .stderr(Stdio::inherit())
+                    .output()
+                    .expect("failed to execute process")
+                    .status
+                    .code()
+                {
+                    std::process::exit(code);
+                }
+            }
+            None => {
+                // Project exists but command doesn't.
+                println!("Command `{}` does not exist.\n", alias.blue());
+                print_project_commands(&project);
+            }
+        }
+
+        return Ok(());
+    };
+
+    match command {
+        Commands::Add { name, arguments } => {
             let mut config = read_config()?;
             let command = match arguments {
                 Some(args) => args.join(" "),
@@ -226,16 +290,14 @@ fn main() -> Result<()> {
                 &command.blue(),
                 pwd.dimmed()
             );
-            Ok(())
         }
-        Some(Commands::Alias { name }) => {
+        Commands::Alias { name } => {
             let mut config = read_config()?;
             config.add_alias(&pwd, &name)?;
             write_config(&config)?;
             println!("Added \"{}\" capabilities in {}", name.blue(), pwd.dimmed());
-            Ok(())
         }
-        Some(Commands::Remove { name }) => {
+        Commands::Remove { name } => {
             let mut config = read_config()?;
             let project = config.get_project_mut(&pwd)?;
             match project.remove(&name) {
@@ -250,10 +312,8 @@ fn main() -> Result<()> {
             }
 
             write_config(&config)?;
-
-            Ok(())
         }
-        Some(Commands::Print { json }) => {
+        Commands::Print { json } => {
             let mut config = read_config()?;
 
             if json {
@@ -264,73 +324,10 @@ fn main() -> Result<()> {
             } else {
                 print_project_commands(&config.resolve_project(&pwd)?)
             }
-
-            Ok(())
-        }
-        None => {
-            if args.alias.is_none() {
-                print_help()?;
-            }
-
-            let mut config = read_config()?;
-            let alias = &args.alias.unwrap();
-            let pwd = &args.pwd;
-            let print = args.print;
-            let arguments = args.arguments;
-            let mut project = config.resolve_project(pwd)?;
-
-            match project.get_mut(alias) {
-                Some(args) if print => {
-                    // Actually print the command
-                    println!("{}", args);
-                }
-                Some(args) => {
-                    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
-
-                    // Execute the command
-                    let mut cmd = Command::new(&shell);
-                    cmd.current_dir(pwd);
-
-                    // Passthrough arguments
-                    let command = arguments.join(" ");
-
-                    // Attach arguments to existing command
-                    if !command.is_empty() {
-                        args.push(' ');
-                        args.push_str(&command);
-                    }
-
-                    // Add common flags for different shells
-                    let cmd = match shell.as_str() {
-                        "/bin/zsh" => cmd.arg("-i").arg("-c"),
-                        "/bin/sh" => cmd.arg("-c"),
-                        _ => &mut cmd,
-                    };
-
-                    cmd.arg(args);
-
-                    if let Some(code) = cmd
-                        .stdin(Stdio::inherit())
-                        .stdout(Stdio::inherit())
-                        .stderr(Stdio::inherit())
-                        .output()
-                        .expect("failed to execute process")
-                        .status
-                        .code()
-                    {
-                        std::process::exit(code);
-                    }
-                }
-                None => {
-                    // Project exists but command doesn't.
-                    println!("Command `{}` does not exist.\n", alias.blue());
-                    print_project_commands(&project);
-                }
-            }
-
-            Ok(())
         }
     }
+
+    Ok(())
 }
 
 fn print_project_commands(project: &Project) {
