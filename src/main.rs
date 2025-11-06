@@ -8,6 +8,8 @@ use std::fs::File;
 use std::io::{Error, Write};
 use std::path::Path;
 use std::process::{Command, Stdio};
+mod rich_edit;
+use crate::rich_edit::rich_edit;
 
 type Project = BTreeMap<String, String>;
 
@@ -42,7 +44,7 @@ enum Commands {
         name: String,
 
         /// The actual command to run
-        arguments: Vec<String>,
+        arguments: Option<Vec<String>>,
     },
 
     /// Alias the current project to a predefined project
@@ -161,7 +163,32 @@ fn main() -> Result<()> {
     match args.command {
         Some(Commands::Add { name, arguments }) => {
             let mut config = read_config()?;
-            let command = arguments.join(" ");
+            let command = match arguments {
+                Some(args) => args.join(" "),
+                None => {
+                    let Some(data) = rich_edit(Some(
+                        "\n# Enter the command you want to alias here.\n# Lines starting with '#' are ignored.\n",
+                    )) else {
+                        println!("{}", "Aborted!".red());
+                        return Ok(());
+                    };
+
+                    let data: Vec<_> = data
+                        .lines()
+                        .map(|line| line.trim())
+                        .filter(|line| !line.is_empty())
+                        .filter(|line| !line.starts_with('#'))
+                        .map(|line| line.to_string())
+                        .collect();
+
+                    if data.is_empty() {
+                        println!("{}", "Aborted!".red());
+                        return Ok(());
+                    }
+
+                    data.join("; ")
+                }
+            };
 
             match config.get_project_mut(&pwd) {
                 Ok(project) => {
