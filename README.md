@@ -101,13 +101,6 @@ PATH=/path-to-taco-project/target/release:$PATH
 
 ### API
 
-#### Add – `taco add {name} -- {command}`
-
-```sh
-taco add ls -- ls -lah
-# Aliased "ls" to "ls -lah" in /Users/robin
-```
-
 #### Add – `taco add {name}`
 
 ```sh
@@ -115,6 +108,16 @@ taco add ls
 ```
 
 This will open your default editor (`$EDITOR` env variable) to input the command. Lines with `#` at the start will be ignored.
+
+#### Add – `taco add {name} -- {command}`
+
+```sh
+taco add ls -- ls -lah
+# Aliased "ls" to "ls -lah" in /Users/robin
+```
+
+Performs the same action as above, but without opening an editor. This is useful
+if it's a simple one-liner command.
 
 #### Edit – `taco edit {name}`
 
