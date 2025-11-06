@@ -158,14 +158,14 @@ fn main() -> Result<()> {
 
     let pwd = fs::canonicalize(&args.pwd)?.to_str().unwrap().to_string();
 
-    match &args.command {
+    match args.command {
         Some(Commands::Add { name, arguments }) => {
             let mut config = read_config()?;
-            let command = &arguments.join(" ");
+            let command = arguments.join(" ");
 
             match config.get_project_mut(&pwd) {
                 Ok(project) => {
-                    if let Some(existing) = project.get(name) {
+                    if let Some(existing) = project.get(&name) {
                         println!(
                             "Command \"{}\" already exists with value \"{}\"",
                             name.blue(),
@@ -203,7 +203,7 @@ fn main() -> Result<()> {
         }
         Some(Commands::Alias { name }) => {
             let mut config = read_config()?;
-            config.add_alias(&pwd, name)?;
+            config.add_alias(&pwd, &name)?;
             write_config(&config)?;
             println!("Added \"{}\" capabilities in {}", name.blue(), pwd.dimmed());
             Ok(())
@@ -211,7 +211,7 @@ fn main() -> Result<()> {
         Some(Commands::Remove { name }) => {
             let mut config = read_config()?;
             let project = config.get_project_mut(&pwd)?;
-            match project.remove(name) {
+            match project.remove(&name) {
                 Some(_) => {
                     write_config(&config)?;
                     println!("Removed alias \"{}\"\n", name.blue());
@@ -229,7 +229,7 @@ fn main() -> Result<()> {
         Some(Commands::Print { json }) => {
             let mut config = read_config()?;
 
-            if *json {
+            if json {
                 println!(
                     "{}",
                     serde_json::to_string_pretty(&config.resolve_project(&pwd)?)?
