@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use color_eyre::eyre::{eyre, Result};
+use color_eyre::eyre::{Result, eyre};
 use colored::*;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
