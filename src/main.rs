@@ -176,9 +176,9 @@ fn main() -> Result<()> {
         let pwd = &args.pwd;
         let print = args.print;
         let arguments = args.arguments;
-        let mut project = config.resolve_project(pwd)?;
+        let project = config.resolve_project(pwd)?;
 
-        match project.get_mut(alias) {
+        match project.get(alias) {
             Some(args) if print => {
                 // Actually print the command
                 println!("{}", args);
@@ -189,15 +189,7 @@ fn main() -> Result<()> {
                 // Execute the command
                 let mut cmd = Command::new(&shell);
                 cmd.current_dir(pwd);
-
-                // Passthrough arguments
-                let command = arguments.join(" ");
-
-                // Attach arguments to existing command
-                if !command.is_empty() {
-                    args.push(' ');
-                    args.push_str(&command);
-                }
+                let command = build_shell_command(args);
 
                 // Add common flags for different shells
                 let cmd = match shell.as_str() {
@@ -206,7 +198,7 @@ fn main() -> Result<()> {
                     _ => &mut cmd,
                 };
 
-                cmd.arg(args);
+                cmd.arg(command).arg("taco").args(arguments);
 
                 if let Some(code) = cmd
                     .stdin(Stdio::inherit())
@@ -393,6 +385,31 @@ fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+fn build_shell_command(command: &str) -> String {
+    format!("{} \"$@\"", command)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::build_shell_command;
+
+    #[test]
+    fn appends_forwarded_arguments() {
+        assert_eq!(
+            build_shell_command("node -e \"console.log(process.argv.slice(1))\""),
+            "node -e \"console.log(process.argv.slice(1))\" \"$@\""
+        );
+    }
+
+    #[test]
+    fn preserves_existing_shell_syntax() {
+        assert_eq!(
+            build_shell_command("FOO=bar npm run dev"),
+            "FOO=bar npm run dev \"$@\""
+        );
+    }
 }
 
 fn print_project_commands(project: &Project) {
