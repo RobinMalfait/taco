@@ -1,0 +1,7 @@
+---
+source: tests/cli.rs
+expression: "sandbox.taco(&[\"add\", \"greet\", \"--\", \"echo\", \"hello\"])"
+---
+exit code: 0
+----- stdout -----
+Aliased "greet" to "echo hello" in <root>/project

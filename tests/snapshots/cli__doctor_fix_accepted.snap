@@ -1,0 +1,13 @@
+---
+source: tests/cli.rs
+expression: "sandbox.taco_stdin(&sandbox.project, &[\"doctor\", \"--fix\"], \"y\\n\")"
+---
+exit code: 0
+----- stdout -----
+Checking <root>/taco.json
+
+Project directories that no longer exist:
+  ∙ /taco-test-does-not-exist (1 command)
+Remove these projects from the config? (y/N) 
+
+Fixed 1 issue.

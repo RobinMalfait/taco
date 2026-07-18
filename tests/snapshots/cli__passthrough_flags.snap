@@ -1,0 +1,7 @@
+---
+source: tests/cli.rs
+expression: "sandbox.taco(&[\"greet\", \"--\", \"--flag\"])"
+---
+exit code: 0
+----- stdout -----
+--flag

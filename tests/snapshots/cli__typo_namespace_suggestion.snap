@@ -1,0 +1,9 @@
+---
+source: tests/cli.rs
+expression: "sandbox.taco(&[\"taco\", \"doctro\"])"
+---
+exit code: 1
+----- stdout -----
+`doctro` is not a builtin taco command.
+
+Did you mean taco taco doctor?

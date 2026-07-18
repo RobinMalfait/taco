@@ -1,0 +1,7 @@
+---
+source: tests/cli.rs
+expression: "sandbox.taco(&[\"print\"])"
+---
+exit code: 0
+----- stdout -----
+MY-PRINT

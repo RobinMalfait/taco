@@ -1,0 +1,7 @@
+---
+source: tests/cli.rs
+expression: "sandbox.taco(&[\"unalias\", \"vitest\"])"
+---
+exit code: 0
+----- stdout -----
+Removed "vitest" capabilities from <root>/project

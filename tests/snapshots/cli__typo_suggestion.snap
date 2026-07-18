@@ -1,0 +1,9 @@
+---
+source: tests/cli.rs
+expression: "sandbox.taco(&[\"tets\"])"
+---
+exit code: 1
+----- stdout -----
+Command `tets` does not exist.
+
+Did you mean taco test?

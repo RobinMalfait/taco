@@ -1,0 +1,7 @@
+---
+source: tests/cli.rs
+expression: "sandbox.taco_in(&sandbox.nested(), &[\"tdd\"])"
+---
+exit code: 0
+----- stdout -----
+vitest-tdd

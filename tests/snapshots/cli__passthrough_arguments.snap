@@ -1,0 +1,7 @@
+---
+source: tests/cli.rs
+expression: "sandbox.taco(&[\"greet\", \"world\"])"
+---
+exit code: 0
+----- stdout -----
+world

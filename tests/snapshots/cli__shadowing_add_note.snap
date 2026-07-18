@@ -1,0 +1,8 @@
+---
+source: tests/cli.rs
+expression: "sandbox.taco(&[\"add\", \"print\", \"--\", \"echo\", \"MY-PRINT\"])"
+---
+exit code: 0
+----- stdout -----
+Aliased "print" to "echo MY-PRINT" in <root>/project
+Note: "print" shadows the builtin `taco print`. Reach the builtin with `taco taco print`.

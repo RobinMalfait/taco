@@ -1,0 +1,5 @@
+---
+source: tests/cli.rs
+expression: sandbox.config_contents()
+---
+{"projects": {"/taco-test-does-not-exist": {"build": "make"}}}

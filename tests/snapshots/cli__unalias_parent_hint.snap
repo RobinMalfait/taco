@@ -1,0 +1,8 @@
+---
+source: tests/cli.rs
+expression: "sandbox.taco_in(&sandbox.nested(), &[\"unalias\", \"vitest\"])"
+---
+exit code: 1
+----- stdout -----
+"vitest" is not aliased in <root>/project/nested, but in <root>/project.
+Run taco unalias vitest --pwd <root>/project to remove it there.

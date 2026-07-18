@@ -1,0 +1,8 @@
+---
+source: tests/cli.rs
+expression: "sandbox.taco_in(&sandbox.nested(), &[\"rm\", \"greet\"])"
+---
+exit code: 1
+----- stdout -----
+Alias "greet" is not defined in <root>/project/nested, but in <root>/project.
+Run taco rm greet --pwd <root>/project to remove it there.

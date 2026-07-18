@@ -1,0 +1,5 @@
+---
+source: tests/cli.rs
+expression: "sandbox.taco(&[\"fail\"])"
+---
+exit code: 7

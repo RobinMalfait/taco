@@ -1,0 +1,12 @@
+---
+source: tests/cli.rs
+expression: "sandbox.taco(&[\"doctor\"])"
+---
+exit code: 1
+----- stdout -----
+Checking <root>/taco.json
+
+Project directories that no longer exist:
+  ∙ /taco-test-does-not-exist (1 command)
+
+1 issue found. Run `taco doctor --fix` to clean up.

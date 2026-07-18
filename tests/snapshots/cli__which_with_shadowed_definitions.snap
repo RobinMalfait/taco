@@ -1,0 +1,14 @@
+---
+source: tests/cli.rs
+expression: "sandbox.taco_in(&sandbox.nested(), &[\"which\", \"greet\"])"
+---
+exit code: 0
+----- stdout -----
+taco greet
+  echo from-nested
+
+Defined in <root>/project/nested
+
+Shadowed definitions:
+  <root>/project
+    echo from-parent

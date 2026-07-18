@@ -1,0 +1,7 @@
+---
+source: tests/cli.rs
+expression: "sandbox.taco(&[\"rm\", \"greet\"])"
+---
+exit code: 0
+----- stdout -----
+Removed alias "greet"

@@ -1,0 +1,9 @@
+---
+source: tests/cli.rs
+expression: "sandbox.taco(&[\"doctor\"])"
+---
+exit code: 0
+----- stdout -----
+Checking <root>/taco.json
+
+No issues found, your taco is fresh!

@@ -1,0 +1,7 @@
+---
+source: tests/cli.rs
+expression: "sandbox.taco_in(&sandbox.nested(), &[\"greet\"])"
+---
+exit code: 0
+----- stdout -----
+from-parent

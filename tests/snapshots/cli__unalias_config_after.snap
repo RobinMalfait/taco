@@ -1,0 +1,12 @@
+---
+source: tests/cli.rs
+expression: sandbox.config_contents()
+---
+{
+  "aliases": {},
+  "projects": {
+    "vitest": {
+      "tdd": "echo vitest-tdd"
+    }
+  }
+}

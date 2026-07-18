@@ -1,0 +1,7 @@
+---
+source: tests/cli.rs
+expression: "sandbox.taco(&[\"add\", \"taco\", \"--\", \"echo\", \"nope\"])"
+---
+exit code: 1
+----- stdout -----
+"taco" is reserved and cannot be used as a command name.
