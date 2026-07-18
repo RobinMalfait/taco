@@ -19,6 +19,7 @@ complete -c taco -n __taco_needs_command -f -a alias -d 'Alias the current proje
 complete -c taco -n __taco_needs_command -f -a unalias -d 'Remove an alias from the current project'
 complete -c taco -n __taco_needs_command -f -a rm -d 'Remove an existing command'
 complete -c taco -n __taco_needs_command -f -a print -d 'Print all the commands'
+complete -c taco -n __taco_needs_command -f -a config -d 'Open the config file in your editor'
 complete -c taco -n __taco_needs_command -f -a completions -d 'Generate a shell completion script'
 complete -c taco -n '__taco_using_command edit which' -f -a "(command taco __complete commands 2>/dev/null)"
 complete -c taco -n '__taco_using_command rm' -f -a "(command taco __complete local-commands 2>/dev/null)"

@@ -35,6 +35,7 @@ _taco() {
         'unalias:Remove an alias from the current project'
         'rm:Remove an existing command'
         'print:Print all the commands'
+        'config:Open the config file in your editor'
         'completions:Generate a shell completion script'
       )
       _taco_items commands
@@ -64,6 +65,8 @@ _taco() {
           ;;
         completions)
           _values 'shell' zsh bash fish
+          ;;
+        config)
           ;;
         *)
           _default

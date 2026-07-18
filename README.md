@@ -204,7 +204,7 @@ This is stored in the `aliases` section of the config:
 
 Now `taco test` and `taco tdd` work in both projects (and their subdirectories), without repeating the commands per project. A project can have multiple aliases, and commands defined in the project itself win over commands inherited via aliases.
 
-Note: named projects like `vitest` only exist in the config file — since `taco add` always uses the current directory, you define their commands by editing `~/.config/taco/taco.json` directly.
+Note: named projects like `vitest` only exist in the config file — since `taco add` always uses the current directory, you define their commands by editing the config directly, e.g. via `taco config`.
 
 An alias can also point to another path-based project, in case you want one project to inherit the commands of another:
 
@@ -263,6 +263,12 @@ taco print --json
 taco rm ls
 # Removed alias "ls"
 ```
+
+#### Config – `taco config`
+
+Opens `~/.config/taco/taco.json` in your default editor (`$VISUAL`, falling back to `$EDITOR`). This is the easiest way to define the commands of named projects like `vitest`, since `taco add` always works on the current directory.
+
+The config is validated when you close the editor, so mistakes are caught immediately instead of at the next `taco` invocation.
 
 #### Completions – `taco completions {shell}`
 

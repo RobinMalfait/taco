@@ -84,6 +84,9 @@ enum Commands {
         json: bool,
     },
 
+    /// Open the config file in your editor
+    Config,
+
     /// Generate a shell completion script
     Completions {
         /// The shell to generate completions for
@@ -466,6 +469,43 @@ fn main() -> Result<()> {
                 println!("{}", serde_json::to_string_pretty(&project)?);
             } else {
                 print_grouped_commands(&config.resolve_project_grouped(&pwd));
+            }
+        }
+        Commands::Config => {
+            let file_path = config_file_location()?;
+
+            // Make sure the file exists, so that the editor has something to open
+            if !file_path.exists() {
+                write_config(&Config::default())?;
+            }
+
+            let editor = std::env::var("VISUAL")
+                .or_else(|_| std::env::var("EDITOR"))
+                .map_err(|_| eyre!("No editor configured, set $VISUAL or $EDITOR"))?;
+
+            // The editor may include arguments, e.g. `code --wait`
+            let mut parts = editor.split_whitespace();
+            let program = parts
+                .next()
+                .ok_or_else(|| eyre!("No editor configured, set $VISUAL or $EDITOR"))?;
+
+            let status = Command::new(program)
+                .args(parts)
+                .arg(&file_path)
+                .stdin(Stdio::inherit())
+                .stdout(Stdio::inherit())
+                .stderr(Stdio::inherit())
+                .status()
+                .wrap_err_with(|| format!("Failed to open editor: {editor}"))?;
+
+            if !status.success() {
+                return Err(eyre!("Editor exited with a non-zero status"));
+            }
+
+            // Catch mistakes immediately instead of at the next taco invocation
+            if let Err(e) = read_config() {
+                println!("{}", format!("{e:#}").red());
+                std::process::exit(1);
             }
         }
         Commands::Completions { shell } => {
