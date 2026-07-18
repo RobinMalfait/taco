@@ -152,6 +152,7 @@ impl Config {
 }
 
 fn main() -> Result<()> {
+    color_eyre::install()?;
     let args = Cli::parse();
 
     let pwd = fs::canonicalize(&args.pwd)
