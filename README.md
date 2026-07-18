@@ -100,7 +100,7 @@ PATH=/path-to-taco-project/target/release:$PATH
 
 ---
 
-### API
+### Usage
 
 #### Add – `taco add {name}`
 
