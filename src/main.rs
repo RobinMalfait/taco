@@ -270,18 +270,13 @@ fn main() -> Result<()> {
         Commands::Remove { name } => {
             let mut config = read_config()?;
             let project = config.get_project_mut(&pwd)?;
-            match project.remove(&name) {
-                Some(_) => {
-                    write_config(&config)?;
-                    println!("Removed alias \"{}\"\n", name.blue());
-                }
-                None => {
-                    println!("Alias \"{}\" does not exist.\n", name.blue());
-                    print_project_commands(project);
-                }
+            if project.remove(&name).is_some() {
+                write_config(&config)?;
+                println!("Removed alias \"{}\"\n", name.blue());
+            } else {
+                println!("Alias \"{}\" does not exist.\n", name.blue());
+                print_project_commands(project);
             }
-
-            write_config(&config)?;
         }
         Commands::Print { json } => {
             let config = read_config()?;
