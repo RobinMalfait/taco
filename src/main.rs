@@ -1,10 +1,10 @@
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
 use color_eyre::eyre::{Result, WrapErr, eyre};
 use colored::*;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs;
-use std::io::{Error, Write};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
 mod rich_edit;
@@ -158,19 +158,17 @@ fn main() -> Result<()> {
         .wrap_err_with(|| format!("Invalid working directory: {}", args.pwd.display()))?;
 
     let Some(command) = args.command else {
-        if args.alias.is_none() {
-            print_help()?;
-        }
+        let Some(alias) = args.alias else {
+            Cli::command().print_help()?;
+            return Ok(());
+        };
 
         let config = read_config()?;
-        let alias = &args.alias.unwrap();
-        let print = args.print;
-        let arguments = args.arguments;
         let project = config.resolve_project(&pwd);
 
-        match project.get(alias) {
-            Some(command) if print => println!("{command}"),
-            Some(command) => run_command(command, &pwd, &arguments)?,
+        match project.get(&alias) {
+            Some(command) if args.print => println!("{command}"),
+            Some(command) => run_command(command, &pwd, &args.arguments)?,
             None => {
                 // Project exists but command doesn't.
                 println!("Command `{}` does not exist.\n", alias.blue());
@@ -417,20 +415,6 @@ fn confirm(message: &str) -> bool {
     println!();
 
     s.trim() == "y" || s.trim() == "Y"
-}
-
-fn print_help() -> Result<(), Error> {
-    let mut cmd = Command::new(std::env::current_exe()?);
-
-    cmd.arg("--help");
-
-    cmd.stdin(Stdio::inherit())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .output()
-        .expect("failed to execute process");
-
-    std::process::exit(0);
 }
 
 fn path_key(path: &Path) -> Result<&str> {
