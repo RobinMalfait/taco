@@ -349,7 +349,10 @@ fn main() -> Result<()> {
             None => {
                 // Project exists but command doesn't.
                 println!("Command `{}` does not exist.\n", alias.blue());
-                print_grouped_commands(&config.resolve_project_grouped(&pwd));
+                let suggestions = did_you_mean(&alias, project.keys().map(String::as_str));
+                if !print_did_you_mean("taco ", &suggestions) {
+                    print_grouped_commands(&config.resolve_project_grouped(&pwd));
+                }
                 std::process::exit(1);
             }
         }
@@ -409,9 +412,11 @@ fn main() -> Result<()> {
             let combined_project = config.resolve_project(&pwd);
             let Some(current_command) = combined_project.get(&name) else {
                 println!(
-                    "{}",
+                    "{}\n",
                     format!("Command \"{name}\" does not exist, cannot edit it.").red()
                 );
+                let suggestions = did_you_mean(&name, combined_project.keys().map(String::as_str));
+                print_did_you_mean("taco edit ", &suggestions);
                 return Ok(());
             };
 
@@ -451,7 +456,14 @@ fn main() -> Result<()> {
 
             if definitions.is_empty() {
                 println!("Command `{}` does not exist.\n", name.blue());
-                print_grouped_commands(&groups);
+                let names: std::collections::BTreeSet<&str> = groups
+                    .iter()
+                    .flat_map(|group| group.commands.keys())
+                    .map(String::as_str)
+                    .collect();
+                if !print_did_you_mean("taco which ", &did_you_mean(&name, names)) {
+                    print_grouped_commands(&groups);
+                }
                 std::process::exit(1);
             }
 
@@ -518,7 +530,17 @@ fn main() -> Result<()> {
                         format!("taco unalias {} --pwd {}", name, ancestor.display()).blue()
                     );
                 }
-                None => println!("\"{}\" is not aliased in {}.", name.blue(), pwd.display()),
+                None => {
+                    println!("\"{}\" is not aliased in {}.\n", name.blue(), pwd.display());
+                    let attached: std::collections::BTreeSet<&str> = pwd
+                        .ancestors()
+                        .filter_map(|ancestor| ancestor.to_str())
+                        .filter_map(|key| config.aliases.get(key))
+                        .flatten()
+                        .map(String::as_str)
+                        .collect();
+                    print_did_you_mean("taco unalias ", &did_you_mean(&name, attached));
+                }
             }
             std::process::exit(1);
         }
@@ -560,7 +582,14 @@ fn main() -> Result<()> {
                 }
                 None => {
                     println!("Alias \"{}\" does not exist.\n", name.blue());
-                    print_grouped_commands(&groups);
+                    let names: std::collections::BTreeSet<&str> = groups
+                        .iter()
+                        .flat_map(|group| group.commands.keys())
+                        .map(String::as_str)
+                        .collect();
+                    if !print_did_you_mean("taco rm ", &did_you_mean(&name, names)) {
+                        print_grouped_commands(&groups);
+                    }
                 }
             }
             std::process::exit(1);
@@ -941,6 +970,71 @@ fn print_completion_pairs(project: &Project) {
     }
 }
 
+/// Optimal string alignment distance (Levenshtein + transpositions), used for the
+/// `Did you mean` suggestions.
+fn edit_distance(a: &str, b: &str) -> usize {
+    let a: Vec<char> = a.chars().collect();
+    let b: Vec<char> = b.chars().collect();
+
+    let mut matrix = vec![vec![0usize; b.len() + 1]; a.len() + 1];
+    for (i, row) in matrix.iter_mut().enumerate() {
+        row[0] = i;
+    }
+    for (j, cell) in matrix[0].iter_mut().enumerate() {
+        *cell = j;
+    }
+
+    for i in 1..=a.len() {
+        for j in 1..=b.len() {
+            let cost = usize::from(a[i - 1] != b[j - 1]);
+            matrix[i][j] = (matrix[i - 1][j] + 1)
+                .min(matrix[i][j - 1] + 1)
+                .min(matrix[i - 1][j - 1] + cost);
+
+            // Transpositions like `tets` → `test` count as a single edit
+            if i > 1 && j > 1 && a[i - 1] == b[j - 2] && a[i - 2] == b[j - 1] {
+                matrix[i][j] = matrix[i][j].min(matrix[i - 2][j - 2] + 1);
+            }
+        }
+    }
+
+    matrix[a.len()][b.len()]
+}
+
+/// Find the closest matches to `input` for a `Did you mean` hint, best match first.
+fn did_you_mean<'a>(input: &str, candidates: impl IntoIterator<Item = &'a str>) -> Vec<&'a str> {
+    let input = input.to_lowercase();
+    let threshold = input.chars().count() / 4 + 1;
+
+    let mut scored: Vec<(usize, &str)> = candidates
+        .into_iter()
+        .map(|candidate| (edit_distance(&input, &candidate.to_lowercase()), candidate))
+        .filter(|(distance, _)| *distance <= threshold)
+        .collect();
+
+    scored.sort();
+    scored.truncate(3);
+    scored.into_iter().map(|(_, candidate)| candidate).collect()
+}
+
+/// Print a `Did you mean` hint. Returns whether anything was suggested.
+fn print_did_you_mean(prefix: &str, suggestions: &[&str]) -> bool {
+    match suggestions {
+        [] => false,
+        [suggestion] => {
+            println!("Did you mean {}?", format!("{prefix}{suggestion}").blue());
+            true
+        }
+        suggestions => {
+            println!("Did you mean one of these?\n");
+            for suggestion in suggestions {
+                println!("  \u{2219} {}", format!("{prefix}{suggestion}").blue());
+            }
+            true
+        }
+    }
+}
+
 fn confirm(message: &str) -> bool {
     print!("{} {} ", message, "(y/N)".dimmed());
     let _ = std::io::stdout().flush();
@@ -998,7 +1092,7 @@ fn write_config(config: &Config) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Config, build_shell_command, clean_edited_command};
+    use super::{Config, build_shell_command, clean_edited_command, did_you_mean, edit_distance};
     use std::path::Path;
 
     #[test]
@@ -1208,6 +1302,26 @@ mod tests {
         assert!(diagnosis.dead_alias_paths.is_empty());
         assert!(diagnosis.unknown_targets.is_empty());
         assert!(diagnosis.unused_presets.is_empty());
+    }
+
+    #[test]
+    fn edit_distance_counts_transpositions_as_one_edit() {
+        assert_eq!(edit_distance("test", "test"), 0);
+        assert_eq!(edit_distance("tets", "test"), 1);
+        assert_eq!(edit_distance("biuld", "build"), 1);
+        assert_eq!(edit_distance("tst", "test"), 1);
+        assert_eq!(edit_distance("dev", "watch"), 5);
+    }
+
+    #[test]
+    fn did_you_mean_suggests_the_closest_command() {
+        assert_eq!(did_you_mean("tets", ["test", "tdd", "build"]), vec!["test"]);
+        assert_eq!(
+            did_you_mean("biuld", ["test", "tdd", "build"]),
+            vec!["build"]
+        );
+        assert_eq!(did_you_mean("tst", ["tdd", "test"]), vec!["test"]);
+        assert!(did_you_mean("deploy", ["test", "tdd", "build"]).is_empty());
     }
 
     #[test]

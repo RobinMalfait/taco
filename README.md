@@ -159,6 +159,17 @@ taco ls --print
 
 The command runs through your shell (`$SHELL`), and taco exits with the same exit code as the command itself.
 
+If you make a typo, taco suggests the closest command instead of printing the full list:
+
+```sh
+taco tets
+# Command `tets` does not exist.
+#
+# Did you mean taco test?
+```
+
+The same suggestions apply to `taco edit`, `taco which`, `taco rm` and `taco unalias`.
+
 #### Which – `taco which {name}`
 
 Shows the command that would run, and where it is defined. If the command is defined in multiple places (a parent directory, or an alias), the shadowed definitions are listed too, closest one first.
