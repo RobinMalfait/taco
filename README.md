@@ -40,7 +40,7 @@ in a lot of different projects, and a lot of them are not even mine. It would be
 
 #### Inheritance
 
-Scripts inherit scripts from **parent** directories. This allows you to set the `npm run test` only once in a shared folder. In my case, I did this in a `~/github.com/tailwindlabs` folder.
+Scripts inherit scripts from **parent** directories. This allows you to set the `npm run test` only once in a shared folder. In my case, I did this in a `~/github.com/tailwindlabs` folder. Commands defined in deeper directories win over the ones from parent directories.
 
 This is how I use it personally:
 
@@ -107,7 +107,9 @@ PATH=/path-to-taco-project/target/release:$PATH
 taco add ls
 ```
 
-This will open your default editor (`$EDITOR` env variable) to input the command. Lines with `#` at the start will be ignored.
+This will open your default editor (`$VISUAL`, falling back to `$EDITOR`) to input the command. Lines with `#` at the start will be ignored, and commands can span multiple lines.
+
+If the alias already exists, you will be asked to confirm before it is overwritten.
 
 #### Add – `taco add {name} -- {command}`
 
@@ -125,7 +127,7 @@ if it's a simple one-liner command.
 taco edit ls
 ```
 
-This will open your default editor (`$EDITOR` env variable) to edit the command. The current command will be pre-filled. Lines with `#` at the start will be ignored.
+This will open your default editor (`$VISUAL`, falling back to `$EDITOR`) to edit the command. The current command will be pre-filled. Lines with `#` at the start will be ignored.
 
 #### Execute – `taco {name} -- {passthrough arguments}`
 
@@ -140,11 +142,47 @@ taco ls
 # ...
 ```
 
-Or if you want to look at the command that is going to be executed use the `--print` flag.
+Additional arguments are passed through to the underlying command. Use `--` if you want to pass flags:
+
+```sh
+taco test -- --watch
+# Runs: ./node_modules/.bin/jest --watch
+```
+
+Or if you want to look at the command that is going to be executed use the `--print` (or `-p`) flag.
 ```sh
 taco ls --print
 # ls -lah
 ```
+
+The command runs through your shell (`$SHELL`), and taco exits with the same exit code as the command itself.
+
+#### Alias – `taco alias {path}`
+
+Next to inheriting commands from parent directories, a project can also inherit the commands from any other "project" in your config. This is useful for defining reusable presets:
+
+```sh
+cd ~/projects/my-app
+taco alias /Users/robin/presets/webdev
+# Added "/Users/robin/presets/webdev" capabilities in /Users/robin/projects/my-app
+```
+
+This is stored in the `aliases` section of the config:
+
+```json
+{
+  "aliases": {
+    "/Users/robin/projects/my-app": ["/Users/robin/presets/webdev"]
+  },
+  "projects": {
+    "/Users/robin/presets/webdev": {
+      "dev": "npm run dev"
+    }
+  }
+}
+```
+
+Now `taco dev` works in `~/projects/my-app` (and its subdirectories). Commands defined in the project itself win over commands inherited via aliases.
 
 #### Print – `taco print`
 
@@ -176,6 +214,14 @@ taco print --json
 ```sh
 taco rm ls
 # Removed alias "ls"
+```
+
+#### Global flags
+
+Every command accepts a `--pwd {path}` flag to act as if taco was run from that directory, instead of the current working directory.
+
+```sh
+taco print --pwd ~/projects/php_project_a
 ```
 
 ---
