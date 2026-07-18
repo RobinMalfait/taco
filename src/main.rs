@@ -405,16 +405,17 @@ fn print_project_commands(project: &Project) {
 }
 
 fn confirm(message: &str) -> bool {
-    let mut s = String::new();
     print!("{} {} ", message, "(y/N)".dimmed());
     let _ = std::io::stdout().flush();
-    std::io::stdin()
-        .read_line(&mut s)
-        .expect("Did not enter a correct string");
+
+    let mut answer = String::new();
+    if std::io::stdin().read_line(&mut answer).is_err() {
+        return false;
+    }
 
     println!();
 
-    s.trim() == "y" || s.trim() == "Y"
+    answer.trim().eq_ignore_ascii_case("y")
 }
 
 fn path_key(path: &Path) -> Result<&str> {
