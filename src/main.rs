@@ -88,14 +88,13 @@ struct Config {
 }
 
 impl Config {
-    /// Get the list of aliases for a project
+    /// Register an alias for a project
     fn add_alias(&mut self, project: &Path, alias: &str) -> Result<()> {
         let key = path_key(project)?;
-
-        self.aliases
-            .entry(key.into())
-            .or_insert(vec![])
-            .push(alias.into());
+        let aliases = self.aliases.entry(key.to_owned()).or_default();
+        if !aliases.iter().any(|existing| existing == alias) {
+            aliases.push(alias.to_owned());
+        }
 
         Ok(())
     }
