@@ -22,6 +22,7 @@ taco add test -- npm run test
 So what happened here? We created aliases!
 
 This is what the config looks like in `~/.config/taco/taco.json`
+
 ```json
 {
   "projects": {
@@ -132,7 +133,7 @@ This will open your default editor (`$VISUAL`, falling back to `$EDITOR`) to edi
 #### Execute – `taco {name} -- {passthrough arguments}`
 
 ```sh
-taco ls 
+taco ls
 # total 680
 # total 680
 # drwxr-x---+ 59 robin  staff   1.8K Dec  1 21:06 .
@@ -150,6 +151,7 @@ taco test -- --watch
 ```
 
 Or if you want to look at the command that is going to be executed use the `--print` (or `-p`) flag.
+
 ```sh
 taco ls --print
 # ls -lah
