@@ -20,6 +20,7 @@ complete -c taco -n __taco_needs_command -f -a unalias -d 'Remove an alias from 
 complete -c taco -n __taco_needs_command -f -a rm -d 'Remove an existing command'
 complete -c taco -n __taco_needs_command -f -a print -d 'Print all the commands'
 complete -c taco -n __taco_needs_command -f -a config -d 'Open the config file in your editor'
+complete -c taco -n __taco_needs_command -f -a doctor -d 'Check the config for stale projects and dead aliases'
 complete -c taco -n __taco_needs_command -f -a completions -d 'Generate a shell completion script'
 complete -c taco -n '__taco_using_command edit which' -f -a "(command taco __complete commands 2>/dev/null)"
 complete -c taco -n '__taco_using_command rm' -f -a "(command taco __complete local-commands 2>/dev/null)"
@@ -27,5 +28,6 @@ complete -c taco -n '__taco_using_command alias' -f -a "(command taco __complete
 complete -c taco -n '__taco_using_command unalias' -f -a "(command taco __complete aliases 2>/dev/null)"
 complete -c taco -n '__taco_using_command completions' -f -a 'zsh bash fish'
 complete -c taco -n '__taco_using_command print' -f -s j -l json -d 'Print commands in JSON format'
+complete -c taco -n '__taco_using_command doctor' -f -l fix -d 'Remove the reported issues from the config'
 complete -c taco -l pwd -d 'The current working directory' -x -a '(__fish_complete_directories)'
 complete -c taco -s p -l print -d 'Print the current command instead of executing it'

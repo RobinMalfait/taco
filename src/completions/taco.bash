@@ -12,7 +12,7 @@ _taco() {
   first="${COMP_WORDS[1]}"
 
   if [[ $COMP_CWORD -eq 1 ]]; then
-    COMPREPLY=($(compgen -W "add edit which alias unalias rm print config completions $(_taco_dynamic commands)" -- "$cur"))
+    COMPREPLY=($(compgen -W "add edit which alias unalias rm print config doctor completions $(_taco_dynamic commands)" -- "$cur"))
     return
   fi
 
@@ -34,6 +34,9 @@ _taco() {
       ;;
     print)
       COMPREPLY=($(compgen -W "--json" -- "$cur"))
+      ;;
+    doctor)
+      COMPREPLY=($(compgen -W "--fix" -- "$cur"))
       ;;
   esac
 }

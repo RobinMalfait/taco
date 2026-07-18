@@ -87,6 +87,13 @@ enum Commands {
     /// Open the config file in your editor
     Config,
 
+    /// Check the config for stale projects and dead aliases
+    Doctor {
+        /// Remove the reported issues from the config
+        #[clap(long)]
+        fix: bool,
+    },
+
     /// Generate a shell completion script
     Completions {
         /// The shell to generate completions for
@@ -238,6 +245,46 @@ impl Config {
         groups
     }
 
+    /// Check the config for stale entries.
+    fn diagnose(&self) -> Diagnosis {
+        let mut diagnosis = Diagnosis::default();
+
+        // Path-based projects whose directory no longer exists. Keys not starting with `/` are
+        // named presets and only exist in the config.
+        for key in self.projects.keys() {
+            if key.starts_with('/') && !Path::new(key).is_dir() {
+                diagnosis.missing_projects.push(key.clone());
+            }
+        }
+
+        for (path, targets) in &self.aliases {
+            if !Path::new(path).is_dir() {
+                // Reporting this row's targets as well would be noise, the whole row is dead
+                diagnosis.dead_alias_paths.push(path.clone());
+                continue;
+            }
+
+            for target in targets {
+                if !self.projects.contains_key(target) {
+                    diagnosis
+                        .unknown_targets
+                        .push((path.clone(), target.clone()));
+                }
+            }
+        }
+
+        // Named presets only contribute commands when they are aliased somewhere
+        let referenced: std::collections::BTreeSet<&String> =
+            self.aliases.values().flatten().collect();
+        for key in self.projects.keys() {
+            if !key.starts_with('/') && !referenced.contains(key) {
+                diagnosis.unused_presets.push(key.clone());
+            }
+        }
+
+        diagnosis
+    }
+
     /// Get the resolved commands, these are the commands of the current project, merged with all
     /// the parent projects. Deeper projects win over their parents.
     fn resolve_project(&self, project: &Path) -> Project {
@@ -248,6 +295,22 @@ impl Config {
 
         commands
     }
+}
+
+/// The issues `taco doctor` found in the config.
+#[derive(Debug, Default)]
+struct Diagnosis {
+    /// Path-based projects whose directory no longer exists
+    missing_projects: Vec<String>,
+
+    /// Alias rows attached to a directory that no longer exists
+    dead_alias_paths: Vec<String>,
+
+    /// Aliases pointing to a project that is not defined, as `(attachment path, target)` pairs
+    unknown_targets: Vec<(String, String)>,
+
+    /// Named presets that are never aliased
+    unused_presets: Vec<String>,
 }
 
 /// A group of commands coming from a single source: a project, or another project inherited via an
@@ -547,6 +610,134 @@ fn main() -> Result<()> {
             if let Err(e) = read_config() {
                 println!("{}", format!("{e:#}").red());
                 std::process::exit(1);
+            }
+        }
+        Commands::Doctor { fix } => {
+            let mut config = read_config()?;
+            let file_path = config_file_location()?;
+            println!("Checking {}\n", file_path.display().to_string().dimmed());
+
+            let diagnosis = config.diagnose();
+            let mut issues = 0;
+            let mut fixed = 0;
+
+            if !diagnosis.missing_projects.is_empty() {
+                issues += diagnosis.missing_projects.len();
+                println!("Project directories that no longer exist:");
+                for key in &diagnosis.missing_projects {
+                    let commands = config.projects[key].len();
+                    println!(
+                        "  \u{2219} {} {}",
+                        key,
+                        format!(
+                            "({commands} command{})",
+                            if commands == 1 { "" } else { "s" }
+                        )
+                        .dimmed()
+                    );
+                }
+                if fix && confirm("Remove these projects from the config?") {
+                    for key in &diagnosis.missing_projects {
+                        config.projects.remove(key);
+                    }
+                    fixed += diagnosis.missing_projects.len();
+                }
+                println!();
+            }
+
+            if !diagnosis.dead_alias_paths.is_empty() {
+                issues += diagnosis.dead_alias_paths.len();
+                println!("Aliases attached to directories that no longer exist:");
+                for path in &diagnosis.dead_alias_paths {
+                    println!(
+                        "  \u{2219} {} {}",
+                        path,
+                        format!("(\u{2192} {})", config.aliases[path].join(", ")).dimmed()
+                    );
+                }
+                if fix && confirm("Remove these aliases from the config?") {
+                    for path in &diagnosis.dead_alias_paths {
+                        config.aliases.remove(path);
+                    }
+                    fixed += diagnosis.dead_alias_paths.len();
+                }
+                println!();
+            }
+
+            if !diagnosis.unknown_targets.is_empty() {
+                issues += diagnosis.unknown_targets.len();
+                println!("Aliases pointing to projects that are not defined:");
+                for (path, target) in &diagnosis.unknown_targets {
+                    println!(
+                        "  \u{2219} {} {}",
+                        target.blue(),
+                        format!("(aliased in {path})").dimmed()
+                    );
+                }
+                if fix && confirm("Remove these aliases from the config?") {
+                    for (path, target) in &diagnosis.unknown_targets {
+                        if let Some(aliases) = config.aliases.get_mut(path) {
+                            aliases.retain(|alias| alias != target);
+                            if aliases.is_empty() {
+                                config.aliases.remove(path);
+                            }
+                        }
+                    }
+                    fixed += diagnosis.unknown_targets.len();
+                }
+                println!();
+            }
+
+            // Informational only: a preset can be intentionally kept around to alias later, so
+            // these are never removed automatically.
+            if !diagnosis.unused_presets.is_empty() {
+                println!("Presets that are never aliased:");
+                for name in &diagnosis.unused_presets {
+                    let commands = config.projects[name].len();
+                    println!(
+                        "  \u{2219} {} {}",
+                        name.blue(),
+                        format!(
+                            "({commands} command{})",
+                            if commands == 1 { "" } else { "s" }
+                        )
+                        .dimmed()
+                    );
+                }
+                println!(
+                    "{}",
+                    "  These are left untouched, remove them via `taco config` if they are no longer needed.\n"
+                        .dimmed()
+                );
+            }
+
+            if fixed > 0 {
+                write_config(&config)?;
+            }
+
+            let remaining = issues - fixed;
+            let plural = |count: usize| if count == 1 { "issue" } else { "issues" };
+            match (remaining, fixed) {
+                (0, 0) => println!("{}", "No issues found, your taco is fresh!".green()),
+                (0, fixed) => println!("{}", format!("Fixed {fixed} {}.", plural(fixed)).green()),
+                (remaining, _) if fix => {
+                    println!(
+                        "{}",
+                        format!("{remaining} {} left.", plural(remaining)).red()
+                    );
+                    std::process::exit(1);
+                }
+                (remaining, _) => {
+                    println!(
+                        "{}",
+                        format!(
+                            "{remaining} {} found. Run `taco doctor --fix` to clean up.",
+                            plural(remaining)
+                        )
+                        .red()
+                    );
+                    std::process::exit(1);
+                }
             }
         }
         Commands::Completions { shell } => {
@@ -964,6 +1155,59 @@ mod tests {
                 .unwrap()
         );
         assert!(config.projects.is_empty());
+    }
+
+    #[test]
+    fn doctor_finds_stale_entries() {
+        let mut config = Config::default();
+
+        // `/` always exists, the made-up paths never do
+        config.set_command(Path::new("/"), "test", "ls").unwrap();
+        config
+            .set_command(Path::new("/taco-test-does-not-exist"), "test", "ls")
+            .unwrap();
+        config
+            .set_command(Path::new("vitest"), "tdd", "vitest")
+            .unwrap();
+        config
+            .set_command(Path::new("prettier"), "format", "prettier -w .")
+            .unwrap();
+        config.add_alias(Path::new("/"), "prettier").unwrap();
+        config.add_alias(Path::new("/"), "missing-preset").unwrap();
+        config
+            .add_alias(Path::new("/taco-test-also-does-not-exist"), "prettier")
+            .unwrap();
+
+        let diagnosis = config.diagnose();
+        assert_eq!(
+            diagnosis.missing_projects,
+            vec!["/taco-test-does-not-exist"]
+        );
+        assert_eq!(
+            diagnosis.dead_alias_paths,
+            vec!["/taco-test-also-does-not-exist"]
+        );
+        assert_eq!(
+            diagnosis.unknown_targets,
+            vec![("/".to_string(), "missing-preset".to_string())]
+        );
+        assert_eq!(diagnosis.unused_presets, vec!["vitest"]);
+    }
+
+    #[test]
+    fn doctor_finds_nothing_in_a_healthy_config() {
+        let mut config = Config::default();
+        config.set_command(Path::new("/"), "test", "ls").unwrap();
+        config
+            .set_command(Path::new("vitest"), "tdd", "vitest")
+            .unwrap();
+        config.add_alias(Path::new("/"), "vitest").unwrap();
+
+        let diagnosis = config.diagnose();
+        assert!(diagnosis.missing_projects.is_empty());
+        assert!(diagnosis.dead_alias_paths.is_empty());
+        assert!(diagnosis.unknown_targets.is_empty());
+        assert!(diagnosis.unused_presets.is_empty());
     }
 
     #[test]

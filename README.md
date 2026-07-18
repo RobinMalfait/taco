@@ -272,6 +272,22 @@ Opens `~/.config/taco/taco.json` in your default editor (`$VISUAL`, falling back
 
 The config is validated when you close the editor, so mistakes are caught immediately instead of at the next `taco` invocation.
 
+#### Doctor – `taco doctor`
+
+Configs accumulate rot over time. `taco doctor` checks for project directories that no longer exist, aliases attached to directories that are gone, and aliases pointing to projects that are not defined. Presets that are never aliased are reported too, but only informationally.
+
+```sh
+taco doctor
+# Checking /Users/robin/.config/taco/taco.json
+#
+# Project directories that no longer exist:
+#   ∙ /Users/robin/github.com/old-project (2 commands)
+#
+# 1 issue found. Run `taco doctor --fix` to clean up.
+```
+
+Run `taco doctor --fix` to remove the offending entries — you are asked for confirmation per category. When issues remain, `taco doctor` exits with a non-zero exit code.
+
 #### Completions – `taco completions {shell}`
 
 Prints a completion script for your shell (`zsh`, `bash` or `fish`). The completions are directory-aware:

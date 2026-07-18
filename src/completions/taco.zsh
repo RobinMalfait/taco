@@ -36,6 +36,7 @@ _taco() {
         'rm:Remove an existing command'
         'print:Print all the commands'
         'config:Open the config file in your editor'
+        'doctor:Check the config for stale projects and dead aliases'
         'completions:Generate a shell completion script'
       )
       _taco_items commands
@@ -67,6 +68,9 @@ _taco() {
           _values 'shell' zsh bash fish
           ;;
         config)
+          ;;
+        doctor)
+          _arguments '--fix[Remove the reported issues from the config]'
           ;;
         *)
           _default
