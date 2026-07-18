@@ -71,6 +71,40 @@ enum Commands {
         #[clap(short, long)]
         json: bool,
     },
+
+    /// Generate a shell completion script
+    Completions {
+        /// The shell to generate completions for
+        #[clap(value_enum)]
+        shell: CompletionShell,
+    },
+
+    /// Complete dynamic values, used by the shell completion scripts
+    #[clap(name = "__complete", hide = true)]
+    Complete {
+        /// The kind of values to complete
+        #[clap(value_enum)]
+        kind: CompleteKind,
+    },
+}
+
+#[derive(Clone, Copy, Debug, clap::ValueEnum)]
+enum CompletionShell {
+    Zsh,
+    Bash,
+    Fish,
+}
+
+#[derive(Clone, Copy, Debug, clap::ValueEnum)]
+enum CompleteKind {
+    /// All commands available in the current directory, including inherited ones
+    Commands,
+
+    /// Only the commands defined in the current directory itself
+    LocalCommands,
+
+    /// Projects that can be used as an alias target
+    Projects,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -289,6 +323,34 @@ fn main() -> Result<()> {
                 print_project_commands(&project);
             }
         }
+        Commands::Completions { shell } => {
+            let script = match shell {
+                CompletionShell::Zsh => include_str!("completions/taco.zsh"),
+                CompletionShell::Bash => include_str!("completions/taco.bash"),
+                CompletionShell::Fish => include_str!("completions/taco.fish"),
+            };
+            print!("{script}");
+        }
+        Commands::Complete { kind } => {
+            let config = read_config()?;
+            match kind {
+                CompleteKind::Commands => print_completion_pairs(&config.resolve_project(&pwd)),
+                CompleteKind::LocalCommands => {
+                    if let Some(project) = config.projects.get(path_key(&pwd)?) {
+                        print_completion_pairs(project);
+                    }
+                }
+                CompleteKind::Projects => {
+                    for (name, project) in &config.projects {
+                        let commands = project.len();
+                        println!(
+                            "{name}\t{commands} command{}",
+                            if commands == 1 { "" } else { "s" }
+                        );
+                    }
+                }
+            }
+        }
     }
 
     Ok(())
@@ -369,6 +431,13 @@ fn clean_edited_command(data: &str) -> Option<String> {
     }
 
     Some(lines.join("\n"))
+}
+
+/// Print `name<TAB>description` pairs for consumption by the shell completion scripts.
+fn print_completion_pairs(project: &Project) {
+    for (name, command) in project {
+        println!("{name}\t{}", command.lines().next().unwrap_or_default());
+    }
 }
 
 fn print_project_commands(project: &Project) {

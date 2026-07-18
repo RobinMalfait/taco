@@ -230,6 +230,45 @@ taco rm ls
 # Removed alias "ls"
 ```
 
+#### Completions – `taco completions {shell}`
+
+Prints a completion script for your shell (`zsh`, `bash` or `fish`). The completions are directory-aware:
+
+- `taco <TAB>` completes the commands available in the current directory (including inherited ones), next to the built-in subcommands.
+- `taco edit <TAB>` completes the same list.
+- `taco rm <TAB>` only completes commands defined in the current directory itself.
+- `taco alias <TAB>` completes the projects from your config.
+
+In zsh and fish, each command also shows what it runs as its description.
+
+##### zsh
+
+Add this to your `~/.zshrc`, after `compinit` is loaded:
+
+```sh
+source <(taco completions zsh)
+```
+
+Or write it to a directory on your `$fpath`:
+
+```sh
+taco completions zsh > ~/.zfunc/_taco
+```
+
+##### bash
+
+Add this to your `~/.bashrc`:
+
+```sh
+eval "$(taco completions bash)"
+```
+
+##### fish
+
+```sh
+taco completions fish > ~/.config/fish/completions/taco.fish
+```
+
 #### Global flags
 
 Every command accepts a `--pwd {path}` flag to act as if taco was run from that directory, instead of the current working directory.
