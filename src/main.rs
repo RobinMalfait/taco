@@ -176,28 +176,13 @@ fn main() -> Result<()> {
             let mut config = read_config()?;
             let command = match arguments {
                 Some(args) => args.join(" "),
-                None => {
-                    let Some(data) = rich_edit(
-                        "\n# Enter the command you want to alias here.\n# Lines starting with '#' are ignored.\n",
-                    ) else {
-                        println!("{}", "Aborted!".red());
-                        return Ok(());
-                    };
-
-                    let data: Vec<_> = data
-                        .trim()
-                        .lines()
-                        .map(|line| line.trim())
-                        .filter(|line| !line.starts_with('#'))
-                        .collect();
-
-                    if data.is_empty() {
+                None => match edit_command(None) {
+                    Some(command) => command,
+                    None => {
                         println!("{}", "Aborted!".red());
                         return Ok(());
                     }
-
-                    data.join("\n")
-                }
+                },
             };
 
             match config.get_project_mut(&pwd) {
@@ -249,27 +234,10 @@ fn main() -> Result<()> {
                 return Ok(());
             };
 
-            let Some(data) = rich_edit(&format!(
-                "{}\n# Enter the command you want to alias here.\n# Lines starting with '#' are ignored.\n",
-                current_command
-            )) else {
+            let Some(command) = edit_command(Some(current_command)) else {
                 println!("{}", "Aborted!".red());
                 return Ok(());
             };
-
-            let data: Vec<_> = data
-                .trim()
-                .lines()
-                .map(|line| line.trim())
-                .filter(|line| !line.starts_with('#'))
-                .collect();
-
-            if data.is_empty() {
-                println!("{}", "Aborted!".red());
-                return Ok(());
-            }
-
-            let command = data.join("\n");
 
             if command == *current_command {
                 println!("{}", "No changes made, aborting.".dimmed());
@@ -389,60 +357,30 @@ fn build_shell_command(command: &str) -> String {
     format!("{} \"$@\"", command)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{Config, build_shell_command};
-    use std::path::Path;
+/// Open the user's editor to write/edit a command, and clean up the result.
+/// Returns `None` when the edit was aborted or ended up empty.
+fn edit_command(current_command: Option<&str>) -> Option<String> {
+    let template = format!(
+        "{}\n# Enter the command you want to alias here.\n# Lines starting with '#' are ignored.\n",
+        current_command.unwrap_or("")
+    );
 
-    #[test]
-    fn appends_forwarded_arguments() {
-        assert_eq!(
-            build_shell_command("node -e \"console.log(process.argv.slice(1))\""),
-            "node -e \"console.log(process.argv.slice(1))\" \"$@\""
-        );
+    clean_edited_command(&rich_edit(&template)?)
+}
+
+fn clean_edited_command(data: &str) -> Option<String> {
+    let lines: Vec<_> = data
+        .trim()
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.starts_with('#'))
+        .collect();
+
+    if lines.iter().all(|line| line.is_empty()) {
+        return None;
     }
 
-    #[test]
-    fn preserves_existing_shell_syntax() {
-        assert_eq!(
-            build_shell_command("FOO=bar npm run dev"),
-            "FOO=bar npm run dev \"$@\""
-        );
-    }
-
-    #[test]
-    fn child_projects_override_parents() {
-        let mut config = Config::default();
-        config
-            .projects
-            .entry("/projects".to_string())
-            .or_default()
-            .insert("test".to_string(), "jest".to_string());
-        config
-            .projects
-            .entry("/projects/app".to_string())
-            .or_default()
-            .insert("test".to_string(), "vitest".to_string());
-
-        let resolved = config.resolve_project(Path::new("/projects/app/src"));
-        assert_eq!(resolved.get("test").map(String::as_str), Some("vitest"));
-    }
-
-    #[test]
-    fn aliased_projects_are_inherited() {
-        let mut config = Config::default();
-        config
-            .projects
-            .entry("/presets/webdev".to_string())
-            .or_default()
-            .insert("dev".to_string(), "npm run dev".to_string());
-        config
-            .add_alias(Path::new("/projects/app"), "/presets/webdev")
-            .unwrap();
-
-        let resolved = config.resolve_project(Path::new("/projects/app"));
-        assert_eq!(resolved.get("dev").map(String::as_str), Some("npm run dev"));
-    }
+    Some(lines.join("\n"))
 }
 
 fn print_project_commands(project: &Project) {
@@ -540,4 +478,83 @@ fn write_config(config: &Config) -> Result<()> {
     fs::rename(&tmp_path, &file_path)?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Config, build_shell_command, clean_edited_command};
+    use std::path::Path;
+
+    #[test]
+    fn appends_forwarded_arguments() {
+        assert_eq!(
+            build_shell_command("node -e \"console.log(process.argv.slice(1))\""),
+            "node -e \"console.log(process.argv.slice(1))\" \"$@\""
+        );
+    }
+
+    #[test]
+    fn preserves_existing_shell_syntax() {
+        assert_eq!(
+            build_shell_command("FOO=bar npm run dev"),
+            "FOO=bar npm run dev \"$@\""
+        );
+    }
+
+    #[test]
+    fn strips_comments_and_surrounding_whitespace() {
+        assert_eq!(
+            clean_edited_command("\nnpm run dev\n# a comment\n"),
+            Some("npm run dev".to_string())
+        );
+    }
+
+    #[test]
+    fn keeps_blank_lines_between_commands() {
+        assert_eq!(
+            clean_edited_command("echo one\n\necho two\n# done\n"),
+            Some("echo one\n\necho two".to_string())
+        );
+    }
+
+    #[test]
+    fn rejects_empty_or_comment_only_input() {
+        assert_eq!(clean_edited_command(""), None);
+        assert_eq!(clean_edited_command("\n \n"), None);
+        assert_eq!(clean_edited_command("# only comments\n# here\n"), None);
+    }
+
+    #[test]
+    fn child_projects_override_parents() {
+        let mut config = Config::default();
+        config
+            .projects
+            .entry("/projects".to_string())
+            .or_default()
+            .insert("test".to_string(), "jest".to_string());
+        config
+            .projects
+            .entry("/projects/app".to_string())
+            .or_default()
+            .insert("test".to_string(), "vitest".to_string());
+
+        let resolved = config.resolve_project(Path::new("/projects/app/src"));
+        assert_eq!(resolved.get("test").map(String::as_str), Some("vitest"));
+    }
+
+    #[test]
+    fn aliased_projects_are_inherited() {
+        let mut config = Config::default();
+        config
+            .projects
+            .entry("/presets/webdev".to_string())
+            .or_default()
+            .insert("dev".to_string(), "npm run dev".to_string());
+        config
+            .add_alias(Path::new("/projects/app"), "/presets/webdev")
+            .unwrap();
+
+        let resolved = config.resolve_project(Path::new("/projects/app"));
+        assert_eq!(resolved.get("dev").map(String::as_str), Some("npm run dev"));
+    }
 }
