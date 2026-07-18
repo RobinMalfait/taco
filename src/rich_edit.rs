@@ -28,14 +28,14 @@ pub fn rich_edit(contents: &str) -> Option<String> {
         .open(&path)
         .and_then(|mut file| file.write_all(contents.as_bytes()))
         .ok()
-        .and_then(|_| {
+        .and_then(|()| {
             process::Command::new(program)
                 .args(parts)
                 .arg(&path)
                 .status()
                 .ok()
         })
-        .filter(|status| status.success())
+        .filter(std::process::ExitStatus::success)
         .and_then(|_| fs::read_to_string(&path).ok());
 
     // Best-effort cleanup; the editor may already have removed the file.

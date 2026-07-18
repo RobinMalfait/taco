@@ -1,6 +1,6 @@
 use clap::{CommandFactory, Parser, Subcommand};
 use color_eyre::eyre::{Result, WrapErr, eyre};
-use colored::*;
+use colored::Colorize;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs;
@@ -185,13 +185,14 @@ fn main() -> Result<()> {
             let mut config = read_config()?;
             let command = match arguments {
                 Some(args) => args.join(" "),
-                None => match edit_command(None) {
-                    Some(command) => command,
-                    None => {
+                None => {
+                    if let Some(command) = edit_command(None) {
+                        command
+                    } else {
                         println!("{}", "Aborted!".red());
                         return Ok(());
                     }
-                },
+                }
             };
 
             let existing = config
@@ -232,7 +233,7 @@ fn main() -> Result<()> {
             let Some(current_command) = combined_project.get(&name) else {
                 println!(
                     "{}",
-                    format!("Command \"{}\" does not exist, cannot edit it.", name).red()
+                    format!("Command \"{name}\" does not exist, cannot edit it.").red()
                 );
                 return Ok(());
             };
@@ -341,7 +342,7 @@ fn exit_code(status: ExitStatus) -> i32 {
 }
 
 fn build_shell_command(command: &str) -> String {
-    format!("{} \"$@\"", command)
+    format!("{command} \"$@\"")
 }
 
 /// Open the user's editor to write/edit a command, and clean up the result.
