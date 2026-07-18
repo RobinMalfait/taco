@@ -737,30 +737,27 @@ fn run_builtin(command: Commands, pwd: PathBuf) -> Result<()> {
                     .is_some_and(|aliases| aliases.contains(&name))
             });
 
-            match attached {
-                Some(ancestor) => {
-                    println!(
-                        "\"{}\" is not aliased in {}, but in {}.",
-                        name.blue(),
-                        pwd.display(),
-                        ancestor.display()
-                    );
-                    println!(
-                        "Run {} to remove it there.",
-                        format!("taco unalias {} --pwd {}", name, ancestor.display()).blue()
-                    );
-                }
-                None => {
-                    println!("\"{}\" is not aliased in {}.\n", name.blue(), pwd.display());
-                    let attached: std::collections::BTreeSet<&str> = pwd
-                        .ancestors()
-                        .filter_map(|ancestor| ancestor.to_str())
-                        .filter_map(|key| config.aliases.get(key))
-                        .flatten()
-                        .map(String::as_str)
-                        .collect();
-                    print_did_you_mean("taco unalias ", &did_you_mean(&name, attached));
-                }
+            if let Some(ancestor) = attached {
+                println!(
+                    "\"{}\" is not aliased in {}, but in {}.",
+                    name.blue(),
+                    pwd.display(),
+                    ancestor.display()
+                );
+                println!(
+                    "Run {} to remove it there.",
+                    format!("taco unalias {} --pwd {}", name, ancestor.display()).blue()
+                );
+            } else {
+                println!("\"{}\" is not aliased in {}.\n", name.blue(), pwd.display());
+                let attached: std::collections::BTreeSet<&str> = pwd
+                    .ancestors()
+                    .filter_map(|ancestor| ancestor.to_str())
+                    .filter_map(|key| config.aliases.get(key))
+                    .flatten()
+                    .map(String::as_str)
+                    .collect();
+                print_did_you_mean("taco unalias ", &did_you_mean(&name, attached));
             }
             std::process::exit(1);
         }
@@ -775,41 +772,38 @@ fn run_builtin(command: Commands, pwd: PathBuf) -> Result<()> {
 
             // The command might be inherited from a parent project or an alias
             let groups = config.resolve_project_grouped(&pwd);
-            match groups
+            if let Some(group) = groups
                 .iter()
                 .rev()
                 .find(|group| group.commands.contains_key(&name))
             {
-                Some(group) => {
+                println!(
+                    "Alias \"{}\" is not defined in {}, but in {}.",
+                    name.blue(),
+                    pwd.display(),
+                    format_group_source(group)
+                );
+                if group.source.starts_with('/') {
                     println!(
-                        "Alias \"{}\" is not defined in {}, but in {}.",
-                        name.blue(),
-                        pwd.display(),
-                        format_group_source(group)
+                        "Run {} to remove it there.",
+                        format!("taco rm {} --pwd {}", name, group.source).blue()
                     );
-                    if group.source.starts_with('/') {
-                        println!(
-                            "Run {} to remove it there.",
-                            format!("taco rm {} --pwd {}", name, group.source).blue()
-                        );
-                    } else {
-                        println!(
-                            "Run {} to edit the \"{}\" project.",
-                            "taco config".blue(),
-                            group.source.blue()
-                        );
-                    }
+                } else {
+                    println!(
+                        "Run {} to edit the \"{}\" project.",
+                        "taco config".blue(),
+                        group.source.blue()
+                    );
                 }
-                None => {
-                    println!("Alias \"{}\" does not exist.\n", name.blue());
-                    let names: std::collections::BTreeSet<&str> = groups
-                        .iter()
-                        .flat_map(|group| group.commands.keys())
-                        .map(String::as_str)
-                        .collect();
-                    if !print_did_you_mean("taco rm ", &did_you_mean(&name, names)) {
-                        print_grouped_commands(&groups);
-                    }
+            } else {
+                println!("Alias \"{}\" does not exist.\n", name.blue());
+                let names: std::collections::BTreeSet<&str> = groups
+                    .iter()
+                    .flat_map(|group| group.commands.keys())
+                    .map(String::as_str)
+                    .collect();
+                if !print_did_you_mean("taco rm ", &did_you_mean(&name, names)) {
+                    print_grouped_commands(&groups);
                 }
             }
             std::process::exit(1);
@@ -1256,7 +1250,7 @@ fn did_you_mean<'a>(input: &str, candidates: impl IntoIterator<Item = &'a str>) 
         .filter(|(distance, _)| *distance <= threshold)
         .collect();
 
-    scored.sort();
+    scored.sort_unstable();
     scored.truncate(3);
     scored.into_iter().map(|(_, candidate)| candidate).collect()
 }
