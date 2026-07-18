@@ -74,7 +74,7 @@ enum Commands {
     },
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 struct Config {
     /// A project can map to other projects so that it can inherit values from that other project.
     /// This allows you to define some common projects like "webdev" or "rust" or anything you
@@ -89,13 +89,6 @@ struct Config {
 }
 
 impl Config {
-    fn new() -> Self {
-        Config {
-            aliases: BTreeMap::new(),
-            projects: BTreeMap::new(),
-        }
-    }
-
     /// Get the list of aliases for a project
     fn add_alias(&mut self, project: &str, alias: &str) -> Result<()> {
         let path = fs::canonicalize(project)?;
@@ -488,7 +481,7 @@ fn ensure_config_exists() -> Result<()> {
         std::fs::create_dir_all(prefix)?;
 
         // Write an empty config file
-        write_config(&Config::new())?;
+        write_config(&Config::default())?;
     }
 
     Ok(())
