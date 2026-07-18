@@ -64,6 +64,12 @@ enum Commands {
         name: String,
     },
 
+    /// Remove an alias from the current project
+    Unalias {
+        /// The name of the alias to remove
+        name: String,
+    },
+
     /// Remove an existing command
     #[clap(name = "rm")]
     Remove {
@@ -111,6 +117,9 @@ enum CompleteKind {
 
     /// Projects that can be used as an alias target
     Projects,
+
+    /// Aliases attached to the current directory or one of its parents
+    Aliases,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -137,6 +146,25 @@ impl Config {
         }
 
         Ok(())
+    }
+
+    /// Remove an alias from a project. Returns whether the alias was removed.
+    fn remove_alias(&mut self, project: &Path, alias: &str) -> Result<bool> {
+        let key = path_key(project)?;
+        let Some(aliases) = self.aliases.get_mut(key) else {
+            return Ok(false);
+        };
+
+        let before = aliases.len();
+        aliases.retain(|existing| existing != alias);
+        let removed = aliases.len() != before;
+
+        // Keep the config tidy when the last alias of a project is removed
+        if aliases.is_empty() {
+            self.aliases.remove(key);
+        }
+
+        Ok(removed)
     }
 
     /// Get the current project's commands.
@@ -381,6 +409,44 @@ fn main() -> Result<()> {
                 pwd.display().to_string().dimmed()
             );
         }
+        Commands::Unalias { name } => {
+            let mut config = read_config()?;
+
+            if config.remove_alias(&pwd, &name)? {
+                write_config(&config)?;
+                println!(
+                    "Removed \"{}\" capabilities from {}",
+                    name.blue(),
+                    pwd.display().to_string().dimmed()
+                );
+                return Ok(());
+            }
+
+            // The alias might be attached to a parent directory instead
+            let attached = pwd.ancestors().skip(1).find(|ancestor| {
+                ancestor
+                    .to_str()
+                    .and_then(|key| config.aliases.get(key))
+                    .is_some_and(|aliases| aliases.contains(&name))
+            });
+
+            match attached {
+                Some(ancestor) => {
+                    println!(
+                        "\"{}\" is not aliased in {}, but in {}.",
+                        name.blue(),
+                        pwd.display(),
+                        ancestor.display()
+                    );
+                    println!(
+                        "Run {} to remove it there.",
+                        format!("taco unalias {} --pwd {}", name, ancestor.display()).blue()
+                    );
+                }
+                None => println!("\"{}\" is not aliased in {}.", name.blue(), pwd.display()),
+            }
+            std::process::exit(1);
+        }
         Commands::Remove { name } => {
             let mut config = read_config()?;
             let project = config.get_project_mut(&pwd)?;
@@ -426,6 +492,23 @@ fn main() -> Result<()> {
                             "{name}\t{commands} command{}",
                             if commands == 1 { "" } else { "s" }
                         );
+                    }
+                }
+                CompleteKind::Aliases => {
+                    // Deepest attachment first; the same alias can be attached at multiple levels
+                    let mut seen = std::collections::BTreeSet::new();
+                    for ancestor in pwd.ancestors() {
+                        let Some(key) = ancestor.to_str() else {
+                            continue;
+                        };
+
+                        if let Some(aliases) = config.aliases.get(key) {
+                            for alias in aliases {
+                                if seen.insert(alias.as_str()) {
+                                    println!("{alias}\taliased in {key}");
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -754,6 +837,44 @@ mod tests {
         assert_eq!(groups.len(), 1);
         assert_eq!(groups[0].source, "vitest");
         assert_eq!(groups[0].via.as_deref(), Some("/projects/app"));
+    }
+
+    #[test]
+    fn remove_alias_removes_a_single_alias() {
+        let mut config = Config::default();
+        config
+            .add_alias(Path::new("/projects/app"), "vitest")
+            .unwrap();
+        config
+            .add_alias(Path::new("/projects/app"), "prettier")
+            .unwrap();
+
+        assert!(
+            config
+                .remove_alias(Path::new("/projects/app"), "vitest")
+                .unwrap()
+        );
+        assert!(
+            !config
+                .remove_alias(Path::new("/projects/app"), "vitest")
+                .unwrap()
+        );
+        assert_eq!(config.aliases["/projects/app"], vec!["prettier"]);
+    }
+
+    #[test]
+    fn removing_the_last_alias_cleans_up_the_project_entry() {
+        let mut config = Config::default();
+        config
+            .add_alias(Path::new("/projects/app"), "vitest")
+            .unwrap();
+
+        assert!(
+            config
+                .remove_alias(Path::new("/projects/app"), "vitest")
+                .unwrap()
+        );
+        assert!(config.aliases.is_empty());
     }
 
     #[test]

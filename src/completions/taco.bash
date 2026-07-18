@@ -12,7 +12,7 @@ _taco() {
   first="${COMP_WORDS[1]}"
 
   if [[ $COMP_CWORD -eq 1 ]]; then
-    COMPREPLY=($(compgen -W "add edit which alias rm print completions $(_taco_dynamic commands)" -- "$cur"))
+    COMPREPLY=($(compgen -W "add edit which alias unalias rm print completions $(_taco_dynamic commands)" -- "$cur"))
     return
   fi
 
@@ -25,6 +25,9 @@ _taco() {
       ;;
     alias)
       COMPREPLY=($(compgen -W "$(_taco_dynamic projects)" -- "$cur"))
+      ;;
+    unalias)
+      COMPREPLY=($(compgen -W "$(_taco_dynamic aliases)" -- "$cur"))
       ;;
     completions)
       COMPREPLY=($(compgen -W "zsh bash fish" -- "$cur"))

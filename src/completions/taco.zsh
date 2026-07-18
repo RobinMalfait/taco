@@ -32,6 +32,7 @@ _taco() {
         'edit:Edit a command'
         'which:Show where a command is defined'
         'alias:Alias the current project to a predefined project'
+        'unalias:Remove an alias from the current project'
         'rm:Remove an existing command'
         'print:Print all the commands'
         'completions:Generate a shell completion script'
@@ -53,6 +54,10 @@ _taco() {
         alias)
           _taco_items projects
           (( ${#reply} )) && _describe -t projects 'project' reply
+          ;;
+        unalias)
+          _taco_items aliases
+          (( ${#reply} )) && _describe -t aliases 'alias' reply
           ;;
         print)
           _arguments '(-j --json)'{-j,--json}'[Print commands in JSON format]'

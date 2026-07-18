@@ -214,6 +214,18 @@ taco alias /Users/robin/projects/other-app
 # Added "/Users/robin/projects/other-app" capabilities in /Users/robin/projects/my-app
 ```
 
+#### Unalias – `taco unalias {name}`
+
+Removes an alias from the current project again:
+
+```sh
+cd ~/projects/project-a
+taco unalias vitest
+# Removed "vitest" capabilities from /Users/robin/projects/project-a
+```
+
+If the alias is attached to a parent directory instead, taco tells you where it is attached and how to remove it there.
+
 #### Print – `taco print`
 
 Commands are grouped by where they are defined — parent directories and aliases first, the current project last. Commands that are overridden by a deeper project only show up in the group that won.
@@ -260,6 +272,7 @@ Prints a completion script for your shell (`zsh`, `bash` or `fish`). The complet
 - `taco edit <TAB>` and `taco which <TAB>` complete the same list.
 - `taco rm <TAB>` only completes commands defined in the current directory itself.
 - `taco alias <TAB>` completes the projects from your config.
+- `taco unalias <TAB>` completes the aliases attached to the current directory or one of its parents.
 
 In zsh and fish, each command also shows what it runs as its description.
 
