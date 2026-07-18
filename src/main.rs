@@ -216,9 +216,9 @@ fn main() -> Result<()> {
             let command = match arguments {
                 Some(args) => args.join(" "),
                 None => {
-                    let Some(data) = rich_edit(Some(
+                    let Some(data) = rich_edit(
                         "\n# Enter the command you want to alias here.\n# Lines starting with '#' are ignored.\n",
-                    )) else {
+                    ) else {
                         println!("{}", "Aborted!".red());
                         return Ok(());
                     };
@@ -288,10 +288,10 @@ fn main() -> Result<()> {
                 return Ok(());
             };
 
-            let Some(data) = rich_edit(Some(&format!(
+            let Some(data) = rich_edit(&format!(
                 "{}\n# Enter the command you want to alias here.\n# Lines starting with '#' are ignored.\n",
                 current_command
-            ))) else {
+            )) else {
                 println!("{}", "Aborted!".red());
                 return Ok(());
             };
