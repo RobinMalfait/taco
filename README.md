@@ -157,14 +157,14 @@ taco ls --print
 
 The command runs through your shell (`$SHELL`), and taco exits with the same exit code as the command itself.
 
-#### Alias – `taco alias {path}`
+#### Alias – `taco alias {name}`
 
-Next to inheriting commands from parent directories, a project can also inherit the commands from any other "project" in your config. This is useful for defining reusable presets:
+Next to inheriting commands from parent directories, a project can also inherit the commands from any other "project" in your config. A project doesn't have to be a path — it can be just a name, which makes it easy to define reusable presets like `vitest`, `prettier`, `vite`, `tailwind`, `next`, ...
 
 ```sh
-cd ~/projects/my-app
-taco alias /Users/robin/presets/webdev
-# Added "/Users/robin/presets/webdev" capabilities in /Users/robin/projects/my-app
+cd ~/projects/project-a
+taco alias vitest
+# Added "vitest" capabilities in /Users/robin/projects/project-a
 ```
 
 This is stored in the `aliases` section of the config:
@@ -172,17 +172,29 @@ This is stored in the `aliases` section of the config:
 ```json
 {
   "aliases": {
-    "/Users/robin/projects/my-app": ["/Users/robin/presets/webdev"]
+    "/Users/robin/projects/project-a": ["vitest"],
+    "/Users/robin/projects/project-b": ["vitest"]
   },
   "projects": {
-    "/Users/robin/presets/webdev": {
-      "dev": "npm run dev"
+    "vitest": {
+      "tdd": "vitest --hideSkippedTests",
+      "test": "vitest run"
     }
   }
 }
 ```
 
-Now `taco dev` works in `~/projects/my-app` (and its subdirectories). Commands defined in the project itself win over commands inherited via aliases.
+Now `taco test` and `taco tdd` work in both projects (and their subdirectories), without repeating the commands per project. A project can have multiple aliases, and commands defined in the project itself win over commands inherited via aliases.
+
+Note: named projects like `vitest` only exist in the config file — since `taco add` always uses the current directory, you define their commands by editing `~/.config/taco/taco.json` directly.
+
+An alias can also point to another path-based project, in case you want one project to inherit the commands of another:
+
+```sh
+cd ~/projects/my-app
+taco alias /Users/robin/projects/other-app
+# Added "/Users/robin/projects/other-app" capabilities in /Users/robin/projects/my-app
+```
 
 #### Print – `taco print`
 
