@@ -12,11 +12,14 @@ _taco() {
   first="${COMP_WORDS[1]}"
 
   if [[ $COMP_CWORD -eq 1 ]]; then
-    COMPREPLY=($(compgen -W "add edit which alias unalias rm print config doctor completions $(_taco_dynamic commands)" -- "$cur"))
+    COMPREPLY=($(compgen -W "add edit which alias unalias rm print config doctor completions taco $(_taco_dynamic commands)" -- "$cur"))
     return
   fi
 
   case "$first" in
+    taco)
+      COMPREPLY=($(compgen -W "add edit which alias unalias rm print config doctor completions" -- "$cur"))
+      ;;
     edit|which)
       COMPREPLY=($(compgen -W "$(_taco_dynamic commands)" -- "$cur"))
       ;;

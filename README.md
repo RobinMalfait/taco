@@ -67,6 +67,19 @@ This is how I use it personally:
 }
 ```
 
+#### Your commands win
+
+Your commands always win over taco's builtin subcommands, so a new taco version can never break your existing commands. If you define a command named `config`, then `taco config` runs _your_ command.
+
+The builtins stay reachable through the `taco` namespace:
+
+```sh
+taco config        # your command
+taco taco config   # the builtin
+```
+
+`taco` itself is the only reserved name (`taco add taco` refuses), which means `taco taco {subcommand}` unambiguously refers to the builtin — use that form in scripts. Shadowing a builtin is perfectly fine, but taco makes it visible: `taco add` prints a note when you create one, `taco print` tags them, and `taco doctor` lists them.
+
 ---
 
 ## Requirements

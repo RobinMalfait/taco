@@ -22,6 +22,8 @@ complete -c taco -n __taco_needs_command -f -a print -d 'Print all the commands'
 complete -c taco -n __taco_needs_command -f -a config -d 'Open the config file in your editor'
 complete -c taco -n __taco_needs_command -f -a doctor -d 'Check the config for stale projects and dead aliases'
 complete -c taco -n __taco_needs_command -f -a completions -d 'Generate a shell completion script'
+complete -c taco -n __taco_needs_command -f -a taco -d 'Run a builtin subcommand'
+complete -c taco -n '__taco_using_command taco' -f -a 'add edit which alias unalias rm print config doctor completions'
 complete -c taco -n '__taco_using_command edit which' -f -a "(command taco __complete commands 2>/dev/null)"
 complete -c taco -n '__taco_using_command rm' -f -a "(command taco __complete local-commands 2>/dev/null)"
 complete -c taco -n '__taco_using_command alias' -f -a "(command taco __complete projects 2>/dev/null)"

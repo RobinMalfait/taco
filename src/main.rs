@@ -35,6 +35,118 @@ struct Cli {
     command: Option<Commands>,
 }
 
+/// Parser for the user-command path, where the first argument is always one of the user's own
+/// commands and never a builtin subcommand.
+#[derive(Parser, Debug)]
+#[clap(about, version, author)]
+struct AliasCli {
+    /// The current working directory
+    #[clap(long, default_value = ".")]
+    pwd: PathBuf,
+
+    /// Print the current command instead of executing it
+    #[clap(short, long)]
+    print: bool,
+
+    /// The alias to execute
+    alias: String,
+
+    /// The arguments to pass to the command
+    arguments: Vec<String>,
+}
+
+/// The result of pre-scanning the raw arguments, used to decide between the user's own commands
+/// and the builtin subcommands before clap gets involved.
+#[derive(Debug, Default)]
+struct ArgScan {
+    /// The value of `--pwd`, when present before a `--` separator
+    pwd: Option<String>,
+
+    /// The first token that is not a global flag
+    candidate: Option<String>,
+
+    /// The index of the candidate within the scanned slice
+    candidate_index: usize,
+
+    /// Whether the candidate appeared after a `--` separator
+    escaped: bool,
+}
+
+/// Find the first real token (and the `--pwd` value) without parsing the full command line.
+fn scan_arguments<S: AsRef<str>>(arguments: &[S]) -> ArgScan {
+    let mut scan = ArgScan::default();
+
+    let mut i = 0;
+    while i < arguments.len() {
+        let token = arguments[i].as_ref();
+        match token {
+            // Everything after `--` belongs to the command, the first token is always an alias
+            "--" => {
+                if let Some(next) = arguments.get(i + 1) {
+                    scan.candidate = Some(next.as_ref().to_owned());
+                    scan.candidate_index = i + 1;
+                    scan.escaped = true;
+                }
+                return scan;
+            }
+            "--pwd" => {
+                if let Some(value) = arguments.get(i + 1) {
+                    scan.pwd = Some(value.as_ref().to_owned());
+                }
+                i += 2;
+            }
+            "-p" | "--print" => i += 1,
+            _ if token.starts_with("--pwd=") => {
+                scan.pwd = token.strip_prefix("--pwd=").map(str::to_owned);
+                i += 1;
+            }
+            // Any other flag (`--help`, `--version`, ...) is clap's business
+            _ if token.starts_with('-') => return scan,
+            _ => {
+                scan.candidate = Some(token.to_owned());
+                scan.candidate_index = i;
+
+                // Keep scanning for a `--pwd` after the candidate, it decides which project the
+                // candidate is resolved in
+                let mut j = i + 1;
+                while j < arguments.len() {
+                    let token = arguments[j].as_ref();
+                    if token == "--" {
+                        break;
+                    } else if token == "--pwd" {
+                        if let Some(value) = arguments.get(j + 1) {
+                            scan.pwd = Some(value.as_ref().to_owned());
+                        }
+                        j += 2;
+                    } else if let Some(value) = token.strip_prefix("--pwd=") {
+                        scan.pwd = Some(value.to_owned());
+                        j += 1;
+                    } else {
+                        j += 1;
+                    }
+                }
+
+                return scan;
+            }
+        }
+    }
+
+    scan
+}
+
+/// The names of all builtin subcommands, including the `taco` namespace itself.
+fn builtin_names() -> Vec<String> {
+    let mut names: std::collections::BTreeSet<String> = Cli::command()
+        .get_subcommands()
+        .filter(|command| !command.is_hide_set())
+        .map(|command| command.get_name().to_string())
+        .collect();
+
+    names.insert("help".to_owned());
+
+    names.into_iter().collect()
+}
+
 #[derive(Subcommand, Debug)]
 enum Commands {
     /// Add a new command
@@ -100,6 +212,12 @@ enum Commands {
         #[clap(value_enum)]
         shell: CompletionShell,
     },
+
+    /// Run a builtin subcommand, even when one of your commands shadows it
+    ///
+    /// Note: parsed before clap gets involved, this variant only exists so that the `taco`
+    /// namespace shows up in the help output.
+    Taco,
 
     /// Complete dynamic values, used by the shell completion scripts
     #[clap(name = "__complete", hide = true)]
@@ -282,6 +400,18 @@ impl Config {
             }
         }
 
+        // Commands that shadow a builtin subcommand
+        let builtins = builtin_names();
+        for (project, commands) in &self.projects {
+            for name in commands.keys() {
+                if builtins.contains(name) {
+                    diagnosis
+                        .shadowed_builtins
+                        .push((project.clone(), name.clone()));
+                }
+            }
+        }
+
         diagnosis
     }
 
@@ -311,6 +441,9 @@ struct Diagnosis {
 
     /// Named presets that are never aliased
     unused_presets: Vec<String>,
+
+    /// Commands that shadow a builtin subcommand, as `(project, name)` pairs
+    shadowed_builtins: Vec<(String, String)>,
 }
 
 /// A group of commands coming from a single source: a project, or another project inherited via an
@@ -329,10 +462,59 @@ struct CommandGroup {
 
 fn main() -> Result<()> {
     color_eyre::install()?;
-    let args = Cli::parse();
 
-    let pwd = fs::canonicalize(&args.pwd)
-        .wrap_err_with(|| format!("Invalid working directory: {}", args.pwd.display()))?;
+    let argv: Vec<String> = std::env::args().collect();
+    let scan = scan_arguments(&argv[1..]);
+
+    // `taco taco {subcommand}` always reaches the builtin subcommands
+    if !scan.escaped && scan.candidate.as_deref() == Some("taco") {
+        let mut argv = argv.clone();
+        argv.remove(scan.candidate_index + 1);
+
+        let args = Cli::parse_from(argv);
+        let pwd = canonicalize_pwd(&args.pwd)?;
+
+        let Some(command) = args.command else {
+            if let Some(alias) = args.alias {
+                println!("`{}` is not a builtin taco command.\n", alias.blue());
+                let builtins = builtin_names();
+                print_did_you_mean(
+                    "taco taco ",
+                    &did_you_mean(&alias, builtins.iter().map(String::as_str)),
+                );
+                std::process::exit(1);
+            }
+
+            Cli::command().print_help()?;
+            return Ok(());
+        };
+
+        return run_builtin(command, pwd);
+    }
+
+    // Your own commands always win over the builtin subcommands. An unreadable config falls
+    // through, so that the builtins (like `taco config` to fix it) stay reachable.
+    if let Some(candidate) = scan.candidate.as_deref()
+        && candidate != "__complete"
+        && let Ok(config) = read_config()
+    {
+        let pwd = canonicalize_pwd(Path::new(scan.pwd.as_deref().unwrap_or(".")))?;
+        let project = config.resolve_project(&pwd);
+
+        if let Some(command) = project.get(candidate) {
+            let args = AliasCli::parse();
+            if args.print {
+                println!("{command}");
+            } else {
+                run_command(command, &pwd, &args.arguments)?;
+            }
+
+            return Ok(());
+        }
+    }
+
+    let args = Cli::parse();
+    let pwd = canonicalize_pwd(&args.pwd)?;
 
     let Some(command) = args.command else {
         let Some(alias) = args.alias else {
@@ -340,28 +522,46 @@ fn main() -> Result<()> {
             return Ok(());
         };
 
+        // The command does not exist — it would have been executed above otherwise
         let config = read_config()?;
         let project = config.resolve_project(&pwd);
 
-        match project.get(&alias) {
-            Some(command) if args.print => println!("{command}"),
-            Some(command) => run_command(command, &pwd, &args.arguments)?,
-            None => {
-                // Project exists but command doesn't.
-                println!("Command `{}` does not exist.\n", alias.blue());
-                let suggestions = did_you_mean(&alias, project.keys().map(String::as_str));
-                if !print_did_you_mean("taco ", &suggestions) {
-                    print_grouped_commands(&config.resolve_project_grouped(&pwd));
-                }
-                std::process::exit(1);
-            }
+        println!("Command `{}` does not exist.\n", alias.blue());
+        let builtins = builtin_names();
+        let candidates: std::collections::BTreeSet<&str> = project
+            .keys()
+            .map(String::as_str)
+            .chain(builtins.iter().map(String::as_str))
+            .collect();
+        if !print_did_you_mean("taco ", &did_you_mean(&alias, candidates)) {
+            print_grouped_commands(&config.resolve_project_grouped(&pwd));
         }
-
-        return Ok(());
+        std::process::exit(1);
     };
 
+    run_builtin(command, pwd)
+}
+
+fn canonicalize_pwd(pwd: &Path) -> Result<PathBuf> {
+    fs::canonicalize(pwd).wrap_err_with(|| format!("Invalid working directory: {}", pwd.display()))
+}
+
+fn run_builtin(command: Commands, pwd: PathBuf) -> Result<()> {
     match command {
+        // Only reachable through degenerate nesting like `taco taco taco`; the pre-scan in main
+        // handles the real `taco taco {subcommand}` invocations
+        Commands::Taco => {
+            Cli::command().print_help()?;
+        }
         Commands::Add { name, arguments } => {
+            if name == "taco" || name == "__complete" {
+                println!(
+                    "{}",
+                    format!("\"{name}\" is reserved and cannot be used as a command name.").red()
+                );
+                std::process::exit(1);
+            }
+
             let mut config = read_config()?;
             let command = match arguments {
                 Some(args) => args.join(" "),
@@ -405,6 +605,16 @@ fn main() -> Result<()> {
                 command.blue(),
                 pwd.display().to_string().dimmed()
             );
+
+            if builtin_names().contains(&name) {
+                println!(
+                    "{}",
+                    format!(
+                        "Note: \"{name}\" shadows the builtin `taco {name}`. Reach the builtin with `taco taco {name}`."
+                    )
+                    .dimmed()
+                );
+            }
         }
         Commands::Edit { name } => {
             let mut config = read_config()?;
@@ -474,6 +684,16 @@ fn main() -> Result<()> {
                 println!("  {}", line.dimmed());
             }
             println!("\nDefined in {}", format_group_source(winner));
+
+            if builtin_names().contains(&name) {
+                println!(
+                    "{}",
+                    format!(
+                        "This shadows the builtin `taco {name}`. Reach the builtin with `taco taco {name}`."
+                    )
+                    .dimmed()
+                );
+            }
 
             // The definitions that lost from the winner, closest one first
             if !definitions.is_empty() {
@@ -740,6 +960,23 @@ fn main() -> Result<()> {
                 );
             }
 
+            // Informational only: shadowing is a feature, your commands win on purpose
+            if !diagnosis.shadowed_builtins.is_empty() {
+                println!("Commands shadowing a builtin subcommand:");
+                for (project, name) in &diagnosis.shadowed_builtins {
+                    println!(
+                        "  \u{2219} {} {}",
+                        name.blue(),
+                        format!("(defined in {project})").dimmed()
+                    );
+                }
+                println!(
+                    "{}",
+                    "  These win over the builtins. Reach the builtins with `taco taco <subcommand>`.\n"
+                        .dimmed()
+                );
+            }
+
             if fixed > 0 {
                 write_config(&config)?;
             }
@@ -913,6 +1150,8 @@ fn format_group_source(group: &CommandGroup) -> String {
 fn print_grouped_commands(groups: &[CommandGroup]) {
     println!("Available commands:\n");
 
+    let builtins = builtin_names();
+
     // The group that wins each command: the last group that defines it
     let mut winner: BTreeMap<&str, usize> = BTreeMap::new();
     for (index, group) in groups.iter().enumerate() {
@@ -948,7 +1187,12 @@ fn print_grouped_commands(groups: &[CommandGroup]) {
                 ("├─", "│ ")
             };
 
-            println!("  {} taco {}", branch.dimmed(), name.blue());
+            let shadows = if builtins.iter().any(|builtin| builtin == *name) {
+                " (shadows the builtin)".dimmed().to_string()
+            } else {
+                String::new()
+            };
+            println!("  {} taco {}{shadows}", branch.dimmed(), name.blue());
             for line in command.lines() {
                 println!("  {} {}", continuation.dimmed(), line.dimmed());
             }
@@ -1092,7 +1336,10 @@ fn write_config(config: &Config) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Config, build_shell_command, clean_edited_command, did_you_mean, edit_distance};
+    use super::{
+        Config, build_shell_command, clean_edited_command, did_you_mean, edit_distance,
+        scan_arguments,
+    };
     use std::path::Path;
 
     #[test]
@@ -1302,6 +1549,57 @@ mod tests {
         assert!(diagnosis.dead_alias_paths.is_empty());
         assert!(diagnosis.unknown_targets.is_empty());
         assert!(diagnosis.unused_presets.is_empty());
+    }
+
+    #[test]
+    fn scan_finds_the_candidate_and_pwd() {
+        let scan = scan_arguments(&["test", "--watch"]);
+        assert_eq!(scan.candidate.as_deref(), Some("test"));
+        assert!(!scan.escaped);
+
+        let scan = scan_arguments(&["--pwd", "/x", "test"]);
+        assert_eq!(scan.pwd.as_deref(), Some("/x"));
+        assert_eq!(scan.candidate.as_deref(), Some("test"));
+        assert_eq!(scan.candidate_index, 2);
+
+        // `--pwd` after the candidate still decides the project
+        let scan = scan_arguments(&["test", "--pwd=/x"]);
+        assert_eq!(scan.pwd.as_deref(), Some("/x"));
+
+        let scan = scan_arguments(&["-p", "config"]);
+        assert_eq!(scan.candidate.as_deref(), Some("config"));
+    }
+
+    #[test]
+    fn scan_treats_double_dash_as_an_escape() {
+        let scan = scan_arguments(&["--", "taco"]);
+        assert_eq!(scan.candidate.as_deref(), Some("taco"));
+        assert!(scan.escaped);
+
+        // Everything after `--` belongs to the command, including a `--pwd`
+        let scan = scan_arguments(&["--", "test", "--pwd", "/x"]);
+        assert_eq!(scan.pwd, None);
+    }
+
+    #[test]
+    fn scan_leaves_other_flags_to_clap() {
+        assert_eq!(scan_arguments(&["--help"]).candidate, None);
+        assert_eq!(scan_arguments(&["--version"]).candidate, None);
+    }
+
+    #[test]
+    fn doctor_reports_commands_shadowing_builtins() {
+        let mut config = Config::default();
+        config
+            .set_command(Path::new("/"), "config", "echo custom")
+            .unwrap();
+        config.set_command(Path::new("/"), "test", "ls").unwrap();
+
+        let diagnosis = config.diagnose();
+        assert_eq!(
+            diagnosis.shadowed_builtins,
+            vec![("/".to_string(), "config".to_string())]
+        );
     }
 
     #[test]

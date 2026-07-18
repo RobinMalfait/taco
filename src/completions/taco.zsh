@@ -16,6 +16,18 @@ _taco() {
   local curcontext="$curcontext" state line
   typeset -A opt_args
   local -a reply
+  local -a builtins=(
+    'add:Add a new command'
+    'edit:Edit a command'
+    'which:Show where a command is defined'
+    'alias:Alias the current project to a predefined project'
+    'unalias:Remove an alias from the current project'
+    'rm:Remove an existing command'
+    'print:Print all the commands'
+    'config:Open the config file in your editor'
+    'doctor:Check the config for stale projects and dead aliases'
+    'completions:Generate a shell completion script'
+  )
 
   _arguments -C \
     '--pwd=[The current working directory]:directory:_files -/' \
@@ -27,24 +39,16 @@ _taco() {
     first)
       # Subcommands and aliases are offered through a single _describe call, so
       # that their descriptions are aligned in a single column.
-      local -a items=(
-        'add:Add a new command'
-        'edit:Edit a command'
-        'which:Show where a command is defined'
-        'alias:Alias the current project to a predefined project'
-        'unalias:Remove an alias from the current project'
-        'rm:Remove an existing command'
-        'print:Print all the commands'
-        'config:Open the config file in your editor'
-        'doctor:Check the config for stale projects and dead aliases'
-        'completions:Generate a shell completion script'
-      )
+      local -a items=($builtins 'taco:Run a builtin subcommand')
       _taco_items commands
       items+=($reply)
       _describe -t commands 'taco command' items
       ;;
     rest)
       case $line[1] in
+        taco)
+          _describe -t subcommands 'taco builtin' builtins
+          ;;
         edit|which)
           _taco_items commands
           (( ${#reply} )) && _describe -t aliases 'alias' reply
