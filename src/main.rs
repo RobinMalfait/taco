@@ -170,13 +170,22 @@ impl Config {
         Ok(removed)
     }
 
-    /// Get the current project's commands.
-    /// Note: it will not merge the commands with any parent projects.
-    fn get_project_mut(&mut self, project: &Path) -> Result<&mut Project> {
+    /// Remove a command from a project. Returns whether the command was removed.
+    /// Note: it will not remove commands defined in parent projects.
+    fn remove_command(&mut self, project: &Path, name: &str) -> Result<bool> {
         let key = path_key(project)?;
-        self.projects
-            .get_mut(key)
-            .ok_or_else(|| eyre!("Project not found: {}", project.display()))
+        let Some(commands) = self.projects.get_mut(key) else {
+            return Ok(false);
+        };
+
+        let removed = commands.remove(name).is_some();
+
+        // Keep the config tidy when the last command of a project is removed
+        if commands.is_empty() {
+            self.projects.remove(key);
+        }
+
+        Ok(removed)
     }
 
     /// Insert (or overwrite) a command in the project, creating the project if needed.
@@ -452,14 +461,46 @@ fn main() -> Result<()> {
         }
         Commands::Remove { name } => {
             let mut config = read_config()?;
-            let project = config.get_project_mut(&pwd)?;
-            if project.remove(&name).is_some() {
+
+            if config.remove_command(&pwd, &name)? {
                 write_config(&config)?;
-                println!("Removed alias \"{}\"\n", name.blue());
-            } else {
-                println!("Alias \"{}\" does not exist.\n", name.blue());
-                print_project_commands(project);
+                println!("Removed alias \"{}\"", name.blue());
+                return Ok(());
             }
+
+            // The command might be inherited from a parent project or an alias
+            let groups = config.resolve_project_grouped(&pwd);
+            match groups
+                .iter()
+                .rev()
+                .find(|group| group.commands.contains_key(&name))
+            {
+                Some(group) => {
+                    println!(
+                        "Alias \"{}\" is not defined in {}, but in {}.",
+                        name.blue(),
+                        pwd.display(),
+                        format_group_source(group)
+                    );
+                    if group.source.starts_with('/') {
+                        println!(
+                            "Run {} to remove it there.",
+                            format!("taco rm {} --pwd {}", name, group.source).blue()
+                        );
+                    } else {
+                        println!(
+                            "Run {} to edit the \"{}\" project.",
+                            "taco config".blue(),
+                            group.source.blue()
+                        );
+                    }
+                }
+                None => {
+                    println!("Alias \"{}\" does not exist.\n", name.blue());
+                    print_grouped_commands(&groups);
+                }
+            }
+            std::process::exit(1);
         }
         Commands::Print { json } => {
             let config = read_config()?;
@@ -709,32 +750,6 @@ fn print_completion_pairs(project: &Project) {
     }
 }
 
-fn print_project_commands(project: &Project) {
-    println!("Available commands:\n");
-    let commands = project.len();
-
-    // No commands
-    if commands == 0 {
-        println!("{}", " \u{2219} There are no commands available.\n".red());
-    }
-
-    // Commands
-    for (key, value) in project {
-        println!("  taco {}\n    {}\n", key.blue(), value.dimmed());
-    }
-
-    // Footer
-    println!(
-        "{}",
-        format!(
-            "{} command{}",
-            commands,
-            if commands == 1 { "" } else { "s" }
-        )
-        .dimmed()
-    );
-}
-
 fn confirm(message: &str) -> bool {
     print!("{} {} ", message, "(y/N)".dimmed());
     let _ = std::io::stdout().flush();
@@ -915,6 +930,40 @@ mod tests {
                 .unwrap()
         );
         assert!(config.aliases.is_empty());
+    }
+
+    #[test]
+    fn remove_command_only_removes_from_the_project_itself() {
+        let mut config = Config::default();
+        config
+            .set_command(Path::new("/projects"), "test", "jest")
+            .unwrap();
+
+        assert!(
+            !config
+                .remove_command(Path::new("/projects/app"), "test")
+                .unwrap()
+        );
+        assert!(
+            config
+                .remove_command(Path::new("/projects"), "test")
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn removing_the_last_command_cleans_up_the_project_entry() {
+        let mut config = Config::default();
+        config
+            .set_command(Path::new("/projects/app"), "test", "jest")
+            .unwrap();
+
+        assert!(
+            config
+                .remove_command(Path::new("/projects/app"), "test")
+                .unwrap()
+        );
+        assert!(config.projects.is_empty());
     }
 
     #[test]

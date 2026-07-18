@@ -264,6 +264,8 @@ taco rm ls
 # Removed alias "ls"
 ```
 
+`taco rm` only removes commands defined in the current directory itself. If the command is inherited from a parent directory or an alias, taco tells you where it is defined and how to remove it there.
+
 #### Config – `taco config`
 
 Opens `~/.config/taco/taco.json` in your default editor (`$VISUAL`, falling back to `$EDITOR`). This is the easiest way to define the commands of named projects like `vitest`, since `taco add` always works on the current directory.
