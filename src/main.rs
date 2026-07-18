@@ -395,10 +395,7 @@ fn print_project_commands(project: &Project) {
         format!(
             "{} command{}",
             commands,
-            match commands {
-                1 => "",
-                _ => "s",
-            }
+            if commands == 1 { "" } else { "s" }
         )
         .dimmed()
     );
