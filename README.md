@@ -7,7 +7,7 @@
 Let's imagine you have 2 projects, and you want to run `tests` in each project.
 
 1. `Project A`, is a Laravel PHP project, so you want to use `phpunit` or `pest`.
-2. `Project b`, is a JavaScript project, so you want to use `jest` or `npm run test`.
+2. `Project b`, is a JavaScript project, so you want to use `vitest` or `npm run test`.
 
 I don't want to remember all of that... Let's fix it.
 
@@ -49,8 +49,8 @@ This is how I use it personally:
 {
   "projects": {
     "/Users/robin/github.com": {
-      "tdd": "./node_modules/.bin/jest --watch",
-      "test": "./node_modules/.bin/jest"
+      "tdd": "./node_modules/.bin/vitest --watch",
+      "test": "./node_modules/.bin/vitest"
     },
     "/Users/robin/github.com/tailwindlabs": {
       "dev": "next dev"
@@ -160,7 +160,7 @@ Additional arguments are passed through to the underlying command. Use `--` if y
 
 ```sh
 taco test -- --watch
-# Runs: ./node_modules/.bin/jest --watch
+# Runs: ./node_modules/.bin/vitest --watch
 ```
 
 Or if you want to look at the command that is going to be executed use the `--print` (or `-p`) flag.
@@ -196,7 +196,7 @@ taco which test
 #
 # Shadowed definitions:
 #   /Users/robin/github.com
-#     ./node_modules/.bin/jest
+#     ./node_modules/.bin/vitest
 ```
 
 #### Alias – `taco alias {name}`
@@ -260,9 +260,9 @@ taco print
 #
 # /Users/robin/github.com
 #   ├─ taco tdd
-#   │    ./node_modules/.bin/jest --watch
+#   │    ./node_modules/.bin/vitest --watch
 #   └─ taco test
-#        ./node_modules/.bin/jest
+#        ./node_modules/.bin/vitest
 #
 # /Users/robin/github.com/RobinMalfait/taco
 #   └─ taco build
@@ -277,7 +277,7 @@ Or..
 taco print --json
 # {
 #   "ls": "ls -lah",
-#   "test": "./node_modules/.bin/jest"
+#   "test": "./node_modules/.bin/vitest"
 # }
 ```
 
