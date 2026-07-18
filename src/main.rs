@@ -101,11 +101,10 @@ impl Config {
         let path = fs::canonicalize(project)?;
         let key = path.to_str().unwrap();
 
-        if !self.aliases.contains_key(key) {
-            self.aliases.insert(key.to_string(), vec![]);
-        }
-
-        self.aliases.get_mut(key).unwrap().push(alias.to_string());
+        self.aliases
+            .entry(key.into())
+            .or_insert(vec![])
+            .push(alias.into());
 
         Ok(())
     }
@@ -135,24 +134,20 @@ impl Config {
 
             // Drop double leading /
             if project_path.len() > 1 {
-                project_path = (&project_path)[1..].to_owned();
+                project_path = (&project_path)[1..].into();
             }
 
             if let Some(other) = self.aliases.get(&project_path) {
                 for alias in other {
                     if let Some(project) = self.projects.get(alias) {
-                        for (key, value) in project {
-                            commands.insert(key.to_owned(), value.to_owned());
-                        }
+                        commands.extend(project.clone());
                     }
                 }
             }
 
             // Merge commands with parent
-            if self.projects.contains_key(&project_path) {
-                for (key, value) in self.projects.get_mut(&project_path).unwrap() {
-                    commands.insert(key.to_owned(), value.to_owned());
-                }
+            if let Some(project) = self.projects.get(&project_path) {
+                commands.extend(project.clone());
             }
         }
 
