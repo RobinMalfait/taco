@@ -1298,6 +1298,13 @@ fn path_key(path: &Path) -> Result<&str> {
 // `$HOME/Library/Application Support` instead, which sort of makes sense but I don't want that...
 // Therefore doing this manually.
 fn config_file_location() -> Result<PathBuf> {
+    // Allow overriding the location, mainly useful for (integration) testing
+    if let Some(path) = std::env::var_os("TACO_CONFIG")
+        && !path.is_empty()
+    {
+        return Ok(PathBuf::from(path));
+    }
+
     let home = dirs::home_dir().ok_or_else(|| eyre!("Could not determine home directory"))?;
     Ok(home.join(".config").join("taco").join("taco.json"))
 }

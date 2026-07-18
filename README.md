@@ -296,6 +296,8 @@ Opens `~/.config/taco/taco.json` in your default editor (`$VISUAL`, falling back
 
 The config is validated when you close the editor, so mistakes are caught immediately instead of at the next `taco` invocation.
 
+Set the `TACO_CONFIG` environment variable to use a different config file location.
+
 #### Doctor – `taco doctor`
 
 Configs accumulate rot over time. `taco doctor` checks for project directories that no longer exist, aliases attached to directories that are gone, and aliases pointing to projects that are not defined. Presets that are never aliased are reported too, but only informationally.
