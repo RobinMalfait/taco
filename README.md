@@ -200,17 +200,23 @@ taco alias /Users/robin/projects/other-app
 
 #### Print – `taco print`
 
+Commands are grouped by where they are defined — parent directories and aliases first, the current project last. Commands that are overridden by a deeper project only show up in the group that won.
+
 ```sh
 taco print
 # Available commands:
 #
-#   taco test
-#     ./node_modules/.bin/jest
+# /Users/robin/github.com
+#   ├─ taco tdd
+#   │    ./node_modules/.bin/jest --watch
+#   └─ taco test
+#        ./node_modules/.bin/jest
 #
-#   taco ls
-#     ls -lah
+# /Users/robin/github.com/RobinMalfait/taco
+#   └─ taco build
+#        cargo build --release
 #
-# 2 commands
+# 3 commands
 ```
 
 Or..

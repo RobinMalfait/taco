@@ -153,13 +153,14 @@ impl Config {
         Ok(())
     }
 
-    /// Get the resolved commands, these are the commands of the current project, merged with all
-    /// the parent projects. Deeper projects win over their parents.
-    fn resolve_project(&self, project: &Path) -> Project {
+    /// Get the resolved commands, grouped by the project they are defined in, ordered from the
+    /// root of the filesystem down to the project itself. Groups can contain commands that are
+    /// overridden by a later group.
+    fn resolve_project_grouped(&self, project: &Path) -> Vec<CommandGroup> {
         let mut ancestors: Vec<&Path> = project.ancestors().collect();
         ancestors.reverse();
 
-        let mut commands = Project::new();
+        let mut groups = vec![];
         for ancestor in ancestors {
             let Some(key) = ancestor.to_str() else {
                 continue;
@@ -168,20 +169,53 @@ impl Config {
             // Commands inherited via aliases
             if let Some(aliases) = self.aliases.get(key) {
                 for alias in aliases {
-                    if let Some(project) = self.projects.get(alias) {
-                        commands.extend(project.clone());
+                    if let Some(commands) = self.projects.get(alias) {
+                        groups.push(CommandGroup {
+                            source: alias.to_owned(),
+                            via: Some(key.to_owned()),
+                            commands: commands.clone(),
+                        });
                     }
                 }
             }
 
             // Commands of the project itself
-            if let Some(project) = self.projects.get(key) {
-                commands.extend(project.clone());
+            if let Some(commands) = self.projects.get(key) {
+                groups.push(CommandGroup {
+                    source: key.to_owned(),
+                    via: None,
+                    commands: commands.clone(),
+                });
             }
+        }
+
+        groups
+    }
+
+    /// Get the resolved commands, these are the commands of the current project, merged with all
+    /// the parent projects. Deeper projects win over their parents.
+    fn resolve_project(&self, project: &Path) -> Project {
+        let mut commands = Project::new();
+        for group in self.resolve_project_grouped(project) {
+            commands.extend(group.commands);
         }
 
         commands
     }
+}
+
+/// A group of commands coming from a single source: a project, or another project inherited via an
+/// alias.
+#[derive(Debug)]
+struct CommandGroup {
+    /// The project the commands are defined in
+    source: String,
+
+    /// The project that pulled these commands in via an alias, if any
+    via: Option<String>,
+
+    /// The commands defined in the source project
+    commands: Project,
 }
 
 fn main() -> Result<()> {
@@ -206,7 +240,7 @@ fn main() -> Result<()> {
             None => {
                 // Project exists but command doesn't.
                 println!("Command `{}` does not exist.\n", alias.blue());
-                print_project_commands(&project);
+                print_grouped_commands(&config.resolve_project_grouped(&pwd));
                 std::process::exit(1);
             }
         }
@@ -315,12 +349,12 @@ fn main() -> Result<()> {
         }
         Commands::Print { json } => {
             let config = read_config()?;
-            let project = config.resolve_project(&pwd);
 
             if json {
+                let project = config.resolve_project(&pwd);
                 println!("{}", serde_json::to_string_pretty(&project)?);
             } else {
-                print_project_commands(&project);
+                print_grouped_commands(&config.resolve_project_grouped(&pwd));
             }
         }
         Commands::Completions { shell } => {
@@ -431,6 +465,73 @@ fn clean_edited_command(data: &str) -> Option<String> {
     }
 
     Some(lines.join("\n"))
+}
+
+/// Format the source of a command group, e.g. `/path` or `vitest (via alias in /path)`.
+fn format_group_source(group: &CommandGroup) -> String {
+    match &group.via {
+        Some(via) => format!(
+            "{} {}",
+            group.source.bold(),
+            format!("(via alias in {via})").dimmed()
+        ),
+        None => group.source.bold().to_string(),
+    }
+}
+
+/// Print the resolved commands as a tree, grouped by the project they are defined in. Commands
+/// that are overridden by a deeper project are only shown in the group that won.
+fn print_grouped_commands(groups: &[CommandGroup]) {
+    println!("Available commands:\n");
+
+    // The group that wins each command: the last group that defines it
+    let mut winner: BTreeMap<&str, usize> = BTreeMap::new();
+    for (index, group) in groups.iter().enumerate() {
+        for name in group.commands.keys() {
+            winner.insert(name, index);
+        }
+    }
+
+    // No commands
+    let total = winner.len();
+    if total == 0 {
+        println!("{}", " \u{2219} There are no commands available.\n".red());
+    }
+
+    // Commands
+    for (index, group) in groups.iter().enumerate() {
+        let commands: Vec<_> = group
+            .commands
+            .iter()
+            .filter(|(name, _)| winner[name.as_str()] == index)
+            .collect();
+
+        if commands.is_empty() {
+            continue;
+        }
+
+        println!("{}", format_group_source(group));
+        for (position, (name, command)) in commands.iter().enumerate() {
+            let last = position + 1 == commands.len();
+            let (branch, continuation) = if last {
+                ("└─", "  ")
+            } else {
+                ("├─", "│ ")
+            };
+
+            println!("  {} taco {}", branch.dimmed(), name.blue());
+            for line in command.lines() {
+                println!("  {} {}", continuation.dimmed(), line.dimmed());
+            }
+        }
+        println!();
+    }
+
+    // Footer
+    println!(
+        "{}",
+        format!("{} command{}", total, if total == 1 { "" } else { "s" }).dimmed()
+    );
 }
 
 /// Print `name<TAB>description` pairs for consumption by the shell completion scripts.
@@ -577,6 +678,37 @@ mod tests {
 
         let resolved = config.resolve_project(Path::new("/projects/app/src"));
         assert_eq!(resolved.get("test").map(String::as_str), Some("vitest"));
+    }
+
+    #[test]
+    fn grouped_resolution_orders_parents_first() {
+        let mut config = Config::default();
+        config
+            .set_command(Path::new("/projects"), "test", "jest")
+            .unwrap();
+        config
+            .set_command(Path::new("/projects/app"), "test", "vitest")
+            .unwrap();
+
+        let groups = config.resolve_project_grouped(Path::new("/projects/app"));
+        let sources: Vec<_> = groups.iter().map(|group| group.source.as_str()).collect();
+        assert_eq!(sources, vec!["/projects", "/projects/app"]);
+    }
+
+    #[test]
+    fn grouped_resolution_tracks_the_aliased_project() {
+        let mut config = Config::default();
+        config
+            .set_command(Path::new("vitest"), "test", "vitest run")
+            .unwrap();
+        config
+            .add_alias(Path::new("/projects/app"), "vitest")
+            .unwrap();
+
+        let groups = config.resolve_project_grouped(Path::new("/projects/app"));
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].source, "vitest");
+        assert_eq!(groups[0].via.as_deref(), Some("/projects/app"));
     }
 
     #[test]
