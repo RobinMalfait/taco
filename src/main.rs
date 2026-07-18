@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::fs::File;
 use std::io::{Error, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 mod rich_edit;
 use crate::rich_edit::rich_edit;
@@ -19,7 +19,7 @@ type Project = BTreeMap<String, String>;
 struct Cli {
     /// The current working directory
     #[clap(long, default_value = ".", global = true)]
-    pwd: String,
+    pwd: PathBuf,
 
     /// Print the current command instead of executing it
     #[clap(short, long)]
@@ -164,7 +164,7 @@ fn main() -> Result<()> {
         let pwd = &args.pwd;
         let print = args.print;
         let arguments = args.arguments;
-        let project = config.resolve_project(pwd)?;
+        let project = config.resolve_project(pwd.into())?;
 
         match project.get(alias) {
             Some(args) if print => {
