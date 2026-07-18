@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use color_eyre::eyre::{Result, eyre};
+use color_eyre::eyre::{Result, WrapErr, eyre};
 use colored::*;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -90,9 +90,8 @@ struct Config {
 
 impl Config {
     /// Get the list of aliases for a project
-    fn add_alias(&mut self, project: &str, alias: &str) -> Result<()> {
-        let path = fs::canonicalize(project)?;
-        let key = path.to_str().unwrap();
+    fn add_alias(&mut self, project: &Path, alias: &str) -> Result<()> {
+        let key = path_key(project)?;
 
         self.aliases
             .entry(key.into())
@@ -104,47 +103,41 @@ impl Config {
 
     /// Get the current project's commands.
     /// Note: it will not merge the commands with any parent projects.
-    fn get_project_mut(&mut self, project: &str) -> Result<&mut Project> {
-        let path = fs::canonicalize(project)?;
-
-        match self.projects.get_mut(path.to_str().unwrap()) {
-            Some(project) => Ok(project),
-            None => Err(eyre!("Project not found: {}", project)),
-        }
+    fn get_project_mut(&mut self, project: &Path) -> Result<&mut Project> {
+        let key = path_key(project)?;
+        self.projects
+            .get_mut(key)
+            .ok_or_else(|| eyre!("Project not found: {}", project.display()))
     }
 
     /// Get the resolved commands, these are the commands of the current project, merged with all
-    /// the parent projects.
-    fn resolve_project(&mut self, project: &str) -> Result<Project> {
-        let path = fs::canonicalize(project)?;
-        let mut commands: Project = BTreeMap::new();
+    /// the parent projects. Deeper projects win over their parents.
+    fn resolve_project(&self, project: &Path) -> Project {
+        let mut ancestors: Vec<&Path> = project.ancestors().collect();
+        ancestors.reverse();
 
-        // Commands + aliases from parent directories
-        let mut parent: Vec<&str> = vec![];
-        for part in path.iter() {
-            parent.push(part.to_str().unwrap());
-            let mut project_path = parent.join("/");
+        let mut commands = Project::new();
+        for ancestor in ancestors {
+            let Some(key) = ancestor.to_str() else {
+                continue;
+            };
 
-            // Drop double leading /
-            if project_path.len() > 1 {
-                project_path = (&project_path)[1..].into();
-            }
-
-            if let Some(other) = self.aliases.get(&project_path) {
-                for alias in other {
+            // Commands inherited via aliases
+            if let Some(aliases) = self.aliases.get(key) {
+                for alias in aliases {
                     if let Some(project) = self.projects.get(alias) {
                         commands.extend(project.clone());
                     }
                 }
             }
 
-            // Merge commands with parent
-            if let Some(project) = self.projects.get(&project_path) {
+            // Commands of the project itself
+            if let Some(project) = self.projects.get(key) {
                 commands.extend(project.clone());
             }
         }
 
-        Ok(commands)
+        commands
     }
 }
 
@@ -152,19 +145,19 @@ fn main() -> Result<()> {
     let args = Cli::parse();
     ensure_config_exists()?;
 
-    let pwd = fs::canonicalize(&args.pwd)?.to_str().unwrap().to_string();
+    let pwd = fs::canonicalize(&args.pwd)
+        .wrap_err_with(|| format!("Invalid working directory: {}", args.pwd.display()))?;
 
     let Some(command) = args.command else {
         if args.alias.is_none() {
             print_help()?;
         }
 
-        let mut config = read_config()?;
+        let config = read_config()?;
         let alias = &args.alias.unwrap();
-        let pwd = &args.pwd;
         let print = args.print;
         let arguments = args.arguments;
-        let project = config.resolve_project(pwd.into())?;
+        let project = config.resolve_project(&pwd);
 
         match project.get(alias) {
             Some(args) if print => {
@@ -176,7 +169,7 @@ fn main() -> Result<()> {
 
                 // Execute the command
                 let mut cmd = Command::new(&shell);
-                cmd.current_dir(pwd);
+                cmd.current_dir(&pwd);
                 let command = build_shell_command(args);
 
                 // Add common flags for different shells
@@ -264,7 +257,7 @@ fn main() -> Result<()> {
                 Err(_) => {
                     let mut project = BTreeMap::new();
                     project.insert(name.to_string(), command.clone());
-                    config.projects.insert(pwd.to_string(), project);
+                    config.projects.insert(path_key(&pwd)?.to_owned(), project);
                     write_config(&config)?;
                 }
             }
@@ -273,13 +266,13 @@ fn main() -> Result<()> {
                 "Aliased \"{}\" to \"{}\" in {}",
                 name.blue(),
                 &command.blue(),
-                pwd.dimmed()
+                pwd.display().to_string().dimmed()
             );
         }
         Commands::Edit { name } => {
             let mut config = read_config()?;
 
-            let combined_project = config.resolve_project(&pwd)?;
+            let combined_project = config.resolve_project(&pwd);
             let Some(current_command) = combined_project.get(&name) else {
                 println!(
                     "{}",
@@ -324,7 +317,7 @@ fn main() -> Result<()> {
                 Err(_) => {
                     let mut project = BTreeMap::new();
                     project.insert(name.to_string(), command.clone());
-                    config.projects.insert(pwd.to_string(), project);
+                    config.projects.insert(path_key(&pwd)?.to_owned(), project);
                     write_config(&config)?;
                 }
             }
@@ -333,14 +326,18 @@ fn main() -> Result<()> {
                 "Aliased \"{}\" to \"{}\" in {}",
                 name.blue(),
                 &command.blue(),
-                pwd.dimmed()
+                pwd.display().to_string().dimmed()
             );
         }
         Commands::Alias { name } => {
             let mut config = read_config()?;
             config.add_alias(&pwd, &name)?;
             write_config(&config)?;
-            println!("Added \"{}\" capabilities in {}", name.blue(), pwd.dimmed());
+            println!(
+                "Added \"{}\" capabilities in {}",
+                name.blue(),
+                pwd.display().to_string().dimmed()
+            );
         }
         Commands::Remove { name } => {
             let mut config = read_config()?;
@@ -359,15 +356,13 @@ fn main() -> Result<()> {
             write_config(&config)?;
         }
         Commands::Print { json } => {
-            let mut config = read_config()?;
+            let config = read_config()?;
+            let project = config.resolve_project(&pwd);
 
             if json {
-                println!(
-                    "{}",
-                    serde_json::to_string_pretty(&config.resolve_project(&pwd)?)?
-                );
+                println!("{}", serde_json::to_string_pretty(&project)?);
             } else {
-                print_project_commands(&config.resolve_project(&pwd)?)
+                print_project_commands(&project);
             }
         }
     }
@@ -381,7 +376,8 @@ fn build_shell_command(command: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::build_shell_command;
+    use super::{Config, build_shell_command};
+    use std::path::Path;
 
     #[test]
     fn appends_forwarded_arguments() {
@@ -397,6 +393,40 @@ mod tests {
             build_shell_command("FOO=bar npm run dev"),
             "FOO=bar npm run dev \"$@\""
         );
+    }
+
+    #[test]
+    fn child_projects_override_parents() {
+        let mut config = Config::default();
+        config
+            .projects
+            .entry("/projects".to_string())
+            .or_default()
+            .insert("test".to_string(), "jest".to_string());
+        config
+            .projects
+            .entry("/projects/app".to_string())
+            .or_default()
+            .insert("test".to_string(), "vitest".to_string());
+
+        let resolved = config.resolve_project(Path::new("/projects/app/src"));
+        assert_eq!(resolved.get("test").map(String::as_str), Some("vitest"));
+    }
+
+    #[test]
+    fn aliased_projects_are_inherited() {
+        let mut config = Config::default();
+        config
+            .projects
+            .entry("/presets/webdev".to_string())
+            .or_default()
+            .insert("dev".to_string(), "npm run dev".to_string());
+        config
+            .add_alias(Path::new("/projects/app"), "/presets/webdev")
+            .unwrap();
+
+        let resolved = config.resolve_project(Path::new("/projects/app"));
+        assert_eq!(resolved.get("dev").map(String::as_str), Some("npm run dev"));
     }
 }
 
@@ -454,6 +484,11 @@ fn print_help() -> Result<(), Error> {
         .expect("failed to execute process");
 
     std::process::exit(0);
+}
+
+fn path_key(path: &Path) -> Result<&str> {
+    path.to_str()
+        .ok_or_else(|| eyre!("Path is not valid UTF-8: {}", path.display()))
 }
 
 // Currently using a library that automatically gives you the
