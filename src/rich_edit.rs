@@ -7,7 +7,7 @@ pub fn rich_edit(contents: Option<&str>) -> Option<String> {
     };
 
     let mut dir = env::temp_dir();
-    dir.push(&format!("{}.sh", Uuid::new_v4()));
+    dir.push(format!("{}.sh", Uuid::new_v4()));
     let file_path = dir.to_str().unwrap();
 
     fs::write(file_path, contents.unwrap_or("")).unwrap();
