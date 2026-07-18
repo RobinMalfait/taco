@@ -109,6 +109,17 @@ impl Config {
             .ok_or_else(|| eyre!("Project not found: {}", project.display()))
     }
 
+    /// Insert (or overwrite) a command in the project, creating the project if needed.
+    fn set_command(&mut self, project: &Path, name: &str, command: &str) -> Result<()> {
+        let key = path_key(project)?;
+        self.projects
+            .entry(key.to_owned())
+            .or_default()
+            .insert(name.to_owned(), command.to_owned());
+
+        Ok(())
+    }
+
     /// Get the resolved commands, these are the commands of the current project, merged with all
     /// the parent projects. Deeper projects win over their parents.
     fn resolve_project(&self, project: &Path) -> Project {
@@ -185,40 +196,34 @@ fn main() -> Result<()> {
                 },
             };
 
-            match config.get_project_mut(&pwd) {
-                Ok(project) => {
-                    if let Some(existing) = project.get(&name) {
-                        println!(
-                            "Command \"{}\" already exists with value \"{}\"",
-                            name.blue(),
-                            existing.blue()
-                        );
+            let existing = config
+                .projects
+                .get(path_key(&pwd)?)
+                .and_then(|project| project.get(&name));
 
-                        if !confirm(&format!(
-                            "Do you want to override it with \"{}\"?",
-                            command.blue()
-                        )) {
-                            println!("{}", "Aborted!".red());
-                            return Ok(());
-                        }
-                    }
+            if let Some(existing) = existing {
+                println!(
+                    "Command \"{}\" already exists with value \"{}\"",
+                    name.blue(),
+                    existing.blue()
+                );
 
-                    // Akshually insert the new command.
-                    project.insert(name.to_string(), command.clone());
-                    write_config(&config)?;
-                }
-                Err(_) => {
-                    let mut project = BTreeMap::new();
-                    project.insert(name.to_string(), command.clone());
-                    config.projects.insert(path_key(&pwd)?.to_owned(), project);
-                    write_config(&config)?;
+                if !confirm(&format!(
+                    "Do you want to override it with \"{}\"?",
+                    command.blue()
+                )) {
+                    println!("{}", "Aborted!".red());
+                    return Ok(());
                 }
             }
+
+            config.set_command(&pwd, &name, &command)?;
+            write_config(&config)?;
 
             println!(
                 "Aliased \"{}\" to \"{}\" in {}",
                 name.blue(),
-                &command.blue(),
+                command.blue(),
                 pwd.display().to_string().dimmed()
             );
         }
@@ -244,24 +249,13 @@ fn main() -> Result<()> {
                 return Ok(());
             }
 
-            match config.get_project_mut(&pwd) {
-                Ok(project) => {
-                    // Akshually insert the new command.
-                    project.insert(name.to_string(), command.clone());
-                    write_config(&config)?;
-                }
-                Err(_) => {
-                    let mut project = BTreeMap::new();
-                    project.insert(name.to_string(), command.clone());
-                    config.projects.insert(path_key(&pwd)?.to_owned(), project);
-                    write_config(&config)?;
-                }
-            }
+            config.set_command(&pwd, &name, &command)?;
+            write_config(&config)?;
 
             println!(
                 "Aliased \"{}\" to \"{}\" in {}",
                 name.blue(),
-                &command.blue(),
+                command.blue(),
                 pwd.display().to_string().dimmed()
             );
         }
@@ -528,15 +522,11 @@ mod tests {
     fn child_projects_override_parents() {
         let mut config = Config::default();
         config
-            .projects
-            .entry("/projects".to_string())
-            .or_default()
-            .insert("test".to_string(), "jest".to_string());
+            .set_command(Path::new("/projects"), "test", "jest")
+            .unwrap();
         config
-            .projects
-            .entry("/projects/app".to_string())
-            .or_default()
-            .insert("test".to_string(), "vitest".to_string());
+            .set_command(Path::new("/projects/app"), "test", "vitest")
+            .unwrap();
 
         let resolved = config.resolve_project(Path::new("/projects/app/src"));
         assert_eq!(resolved.get("test").map(String::as_str), Some("vitest"));
@@ -546,10 +536,8 @@ mod tests {
     fn aliased_projects_are_inherited() {
         let mut config = Config::default();
         config
-            .projects
-            .entry("/presets/webdev".to_string())
-            .or_default()
-            .insert("dev".to_string(), "npm run dev".to_string());
+            .set_command(Path::new("/presets/webdev"), "dev", "npm run dev")
+            .unwrap();
         config
             .add_alias(Path::new("/projects/app"), "/presets/webdev")
             .unwrap();
