@@ -4,7 +4,6 @@ use colored::*;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs;
-use std::fs::File;
 use std::io::{Error, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
@@ -143,7 +142,6 @@ impl Config {
 
 fn main() -> Result<()> {
     let args = Cli::parse();
-    ensure_config_exists()?;
 
     let pwd = fs::canonicalize(&args.pwd)
         .wrap_err_with(|| format!("Invalid working directory: {}", args.pwd.display()))?;
@@ -513,42 +511,33 @@ fn path_key(path: &Path) -> Result<&str> {
 // However, I'm on MacOS and I also want to use `~/.config`, but it results in
 // `$HOME/Library/Application Support` instead, which sort of makes sense but I don't want that...
 // Therefore doing this manually.
-fn config_file_location() -> String {
-    Path::new(&dirs::home_dir().unwrap())
-        .join(".config")
-        .join("taco")
-        .join("taco.json")
-        .to_str()
-        .unwrap()
-        .to_owned()
-}
-
-fn ensure_config_exists() -> Result<()> {
-    let file_path = config_file_location();
-    let location = Path::new(&file_path);
-
-    if !location.exists() {
-        // Ensure parent directories exist
-        let prefix = location.parent().unwrap();
-        std::fs::create_dir_all(prefix)?;
-
-        // Write an empty config file
-        write_config(&Config::default())?;
-    }
-
-    Ok(())
+fn config_file_location() -> Result<PathBuf> {
+    let home = dirs::home_dir().ok_or_else(|| eyre!("Could not determine home directory"))?;
+    Ok(home.join(".config").join("taco").join("taco.json"))
 }
 
 fn read_config() -> Result<Config> {
-    let file_path = config_file_location();
-    let file = File::open(file_path)?;
-    let config: Config = serde_json::from_reader(file).expect("JSON was not well-formatted");
-
-    Ok(config)
+    let file_path = config_file_location()?;
+    match fs::read(&file_path) {
+        Ok(contents) => serde_json::from_slice(&contents)
+            .wrap_err_with(|| format!("Invalid config file: {}", file_path.display())),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Config::default()),
+        Err(e) => {
+            Err(e).wrap_err_with(|| format!("Could not read config file: {}", file_path.display()))
+        }
+    }
 }
 
 fn write_config(config: &Config) -> Result<()> {
-    let file_path = config_file_location();
-    std::fs::write(file_path, serde_json::to_string_pretty(&config)?)?;
+    let file_path = config_file_location()?;
+    if let Some(parent) = file_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    // Write to a temporary file first so a crash mid-write can't corrupt the config.
+    let tmp_path = file_path.with_extension("json.tmp");
+    fs::write(&tmp_path, serde_json::to_string_pretty(config)?)?;
+    fs::rename(&tmp_path, &file_path)?;
+
     Ok(())
 }
