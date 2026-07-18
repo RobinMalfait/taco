@@ -159,6 +159,22 @@ taco ls --print
 
 The command runs through your shell (`$SHELL`), and taco exits with the same exit code as the command itself.
 
+#### Which – `taco which {name}`
+
+Shows the command that would run, and where it is defined. If the command is defined in multiple places (a parent directory, or an alias), the shadowed definitions are listed too, closest one first.
+
+```sh
+taco which test
+# taco test
+#   cargo nextest run --release
+#
+# Defined in rust (via alias in /Users/robin/github.com/RobinMalfait/taco)
+#
+# Shadowed definitions:
+#   /Users/robin/github.com
+#     ./node_modules/.bin/jest
+```
+
 #### Alias – `taco alias {name}`
 
 Next to inheriting commands from parent directories, a project can also inherit the commands from any other "project" in your config. A project doesn't have to be a path — it can be just a name, which makes it easy to define reusable presets like `vitest`, `prettier`, `vite`, `tailwind`, `next`, ...
@@ -241,7 +257,7 @@ taco rm ls
 Prints a completion script for your shell (`zsh`, `bash` or `fish`). The completions are directory-aware:
 
 - `taco <TAB>` completes the commands available in the current directory (including inherited ones), next to the built-in subcommands.
-- `taco edit <TAB>` completes the same list.
+- `taco edit <TAB>` and `taco which <TAB>` complete the same list.
 - `taco rm <TAB>` only completes commands defined in the current directory itself.
 - `taco alias <TAB>` completes the projects from your config.
 

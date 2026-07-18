@@ -14,11 +14,12 @@ end
 complete -c taco -n __taco_needs_command -f -a "(command taco __complete commands 2>/dev/null)"
 complete -c taco -n __taco_needs_command -f -a add -d 'Add a new command'
 complete -c taco -n __taco_needs_command -f -a edit -d 'Edit a command'
+complete -c taco -n __taco_needs_command -f -a which -d 'Show where a command is defined'
 complete -c taco -n __taco_needs_command -f -a alias -d 'Alias the current project to a predefined project'
 complete -c taco -n __taco_needs_command -f -a rm -d 'Remove an existing command'
 complete -c taco -n __taco_needs_command -f -a print -d 'Print all the commands'
 complete -c taco -n __taco_needs_command -f -a completions -d 'Generate a shell completion script'
-complete -c taco -n '__taco_using_command edit' -f -a "(command taco __complete commands 2>/dev/null)"
+complete -c taco -n '__taco_using_command edit which' -f -a "(command taco __complete commands 2>/dev/null)"
 complete -c taco -n '__taco_using_command rm' -f -a "(command taco __complete local-commands 2>/dev/null)"
 complete -c taco -n '__taco_using_command alias' -f -a "(command taco __complete projects 2>/dev/null)"
 complete -c taco -n '__taco_using_command completions' -f -a 'zsh bash fish'

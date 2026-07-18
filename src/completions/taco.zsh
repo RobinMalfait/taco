@@ -30,6 +30,7 @@ _taco() {
       local -a items=(
         'add:Add a new command'
         'edit:Edit a command'
+        'which:Show where a command is defined'
         'alias:Alias the current project to a predefined project'
         'rm:Remove an existing command'
         'print:Print all the commands'
@@ -41,7 +42,7 @@ _taco() {
       ;;
     rest)
       case $line[1] in
-        edit)
+        edit|which)
           _taco_items commands
           (( ${#reply} )) && _describe -t aliases 'alias' reply
           ;;

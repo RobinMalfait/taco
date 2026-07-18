@@ -52,6 +52,12 @@ enum Commands {
         name: String,
     },
 
+    /// Show where a command is defined
+    Which {
+        /// The name of the alias to look up
+        name: String,
+    },
+
     /// Alias the current project to a predefined project
     Alias {
         /// The name of the alias
@@ -325,6 +331,45 @@ fn main() -> Result<()> {
                 command.blue(),
                 pwd.display().to_string().dimmed()
             );
+        }
+        Commands::Which { name } => {
+            let config = read_config()?;
+            let groups = config.resolve_project_grouped(&pwd);
+
+            // Deepest definition first. The same project can be aliased at multiple levels, but
+            // its commands are identical, so only the deepest occurrence matters.
+            let mut seen = std::collections::BTreeSet::new();
+            let mut definitions: Vec<&CommandGroup> = groups
+                .iter()
+                .rev()
+                .filter(|group| group.commands.contains_key(&name))
+                .filter(|group| seen.insert(group.source.as_str()))
+                .collect();
+
+            if definitions.is_empty() {
+                println!("Command `{}` does not exist.\n", name.blue());
+                print_grouped_commands(&groups);
+                std::process::exit(1);
+            }
+
+            let winner = definitions.remove(0);
+
+            println!("taco {}", name.blue());
+            for line in winner.commands[&name].lines() {
+                println!("  {}", line.dimmed());
+            }
+            println!("\nDefined in {}", format_group_source(winner));
+
+            // The definitions that lost from the winner, closest one first
+            if !definitions.is_empty() {
+                println!("\nShadowed definitions:");
+                for group in definitions {
+                    println!("  {}", format_group_source(group));
+                    for line in group.commands[&name].lines() {
+                        println!("    {}", line.dimmed());
+                    }
+                }
+            }
         }
         Commands::Alias { name } => {
             let mut config = read_config()?;
