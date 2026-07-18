@@ -7,7 +7,7 @@ use std::fs;
 use std::fs::File;
 use std::io::{Error, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Command, ExitStatus, Stdio};
 mod rich_edit;
 use crate::rich_edit::rich_edit;
 
@@ -160,43 +160,13 @@ fn main() -> Result<()> {
         let project = config.resolve_project(&pwd);
 
         match project.get(alias) {
-            Some(args) if print => {
-                // Actually print the command
-                println!("{}", args);
-            }
-            Some(args) => {
-                let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
-
-                // Execute the command
-                let mut cmd = Command::new(&shell);
-                cmd.current_dir(&pwd);
-                let command = build_shell_command(args);
-
-                // Add common flags for different shells
-                let cmd = match shell.as_str() {
-                    "/bin/zsh" => cmd.arg("-i").arg("-c"),
-                    "/bin/sh" => cmd.arg("-c"),
-                    _ => &mut cmd,
-                };
-
-                cmd.arg(command).arg("taco").args(arguments);
-
-                if let Some(code) = cmd
-                    .stdin(Stdio::inherit())
-                    .stdout(Stdio::inherit())
-                    .stderr(Stdio::inherit())
-                    .output()
-                    .expect("failed to execute process")
-                    .status
-                    .code()
-                {
-                    std::process::exit(code);
-                }
-            }
+            Some(command) if print => println!("{command}"),
+            Some(command) => run_command(command, &pwd, &arguments)?,
             None => {
                 // Project exists but command doesn't.
                 println!("Command `{}` does not exist.\n", alias.blue());
                 print_project_commands(&project);
+                std::process::exit(1);
             }
         }
 
@@ -368,6 +338,53 @@ fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Run the aliased command through the user's shell, forwarding any extra arguments, and exit with
+/// the same status code as the command itself.
+fn run_command(command: &str, pwd: &Path, arguments: &[String]) -> Result<()> {
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
+
+    let mut cmd = Command::new(&shell);
+    cmd.current_dir(pwd);
+
+    // Interactive mode so that aliases/functions from the shell's rc files are available
+    if Path::new(&shell)
+        .file_name()
+        .is_some_and(|name| name == "zsh")
+    {
+        cmd.arg("-i");
+    }
+
+    let status = cmd
+        .arg("-c")
+        .arg(build_shell_command(command))
+        .arg("taco") // $0 for the command
+        .args(arguments)
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()
+        .wrap_err_with(|| format!("Failed to execute {shell}"))?;
+
+    std::process::exit(exit_code(status));
+}
+
+/// Mirror the child's exit code; treat death-by-signal as 128 + signal like most shells do.
+fn exit_code(status: ExitStatus) -> i32 {
+    if let Some(code) = status.code() {
+        return code;
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        if let Some(signal) = status.signal() {
+            return 128 + signal;
+        }
+    }
+
+    1
 }
 
 fn build_shell_command(command: &str) -> String {
