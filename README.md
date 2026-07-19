@@ -1,5 +1,7 @@
 ## Taco
 
+[![CI](https://github.com/RobinMalfait/taco/actions/workflows/ci.yml/badge.svg)](https://github.com/RobinMalfait/taco/actions/workflows/ci.yml)
+
 > It's a wrapper around your commands!
 
 ### Eh? What are you talking about...
