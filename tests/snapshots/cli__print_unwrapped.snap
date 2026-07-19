@@ -1,0 +1,14 @@
+---
+source: tests/cli.rs
+expression: "sandbox.taco(&[\"print\"])"
+snapshot_kind: text
+---
+exit code: 0
+----- stdout -----
+Available commands:
+
+taco dev     m run dev
+taco format  prettier --cache --ignore-unknown --write .
+taco tw      bun --bun /Users/robin/github.com/tailwindlabs/tailwindcss/packages/cli/src/index.ts
+
+3 commands

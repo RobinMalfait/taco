@@ -70,6 +70,13 @@ impl Sandbox {
         self.spawn(command, stdin)
     }
 
+    /// Run taco pretending the terminal is `columns` wide.
+    fn taco_with_columns(&self, columns: &str, arguments: &[&str]) -> String {
+        let mut command = self.taco_command(&self.project);
+        command.args(arguments).env("TACO_COLUMNS", columns);
+        self.spawn(command, "")
+    }
+
     /// Write a repo-local `.taco.json` in the project directory.
     fn write_local_config(&self, json: &str) {
         fs::write(self.project.join(".taco.json"), json).unwrap();
@@ -97,6 +104,7 @@ impl Sandbox {
             .env("NO_COLOR", "1")
             .env_remove("VISUAL")
             .env_remove("EDITOR")
+            .env_remove("TACO_COLUMNS")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -618,5 +626,34 @@ fn print_shows_the_resolution_order_as_a_tree() {
     assert_snapshot!(
         "print_tree",
         sandbox.taco_in(&sandbox.nested(), &["print", "--verbose"])
+    );
+}
+
+#[test]
+fn print_wraps_to_the_terminal_width() {
+    let sandbox = Sandbox::new();
+    sandbox.taco(&[
+        "add",
+        "tw",
+        "--",
+        "bun --bun /Users/robin/github.com/tailwindlabs/tailwindcss/packages/cli/src/index.ts",
+    ]);
+    sandbox.taco(&["add", "dev", "--", "m", "run", "dev"]);
+    sandbox.taco(&[
+        "add",
+        "format",
+        "--",
+        "prettier --cache --ignore-unknown --write .",
+    ]);
+
+    assert_snapshot!("print_wrapped", sandbox.taco_with_columns("40", &["print"]));
+
+    // Without a terminal (piped output, like here), nothing wraps
+    assert_snapshot!("print_unwrapped", sandbox.taco(&["print"]));
+
+    // The verbose tree wraps too, inside each group's indentation
+    assert_snapshot!(
+        "print_tree_wrapped",
+        sandbox.taco_with_columns("40", &["print", "--verbose"])
     );
 }

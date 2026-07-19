@@ -325,6 +325,8 @@ taco print
 # 3 commands
 ```
 
+Long commands wrap to the width of your terminal, aligned inside the command column. Wrapped lines end with a `\`, so what you see is still a valid shell command — a single argument is never broken in two, even when it is longer than a whole line. Piped or redirected output never wraps.
+
 Add `--verbose` (or `-v`) to see where every command comes from: a tree that mirrors the resolution order (see [Which command wins](#which-command-wins)), the current project first, with every parent directory, alias and `.taco.json` nested one level deeper. The first definition of a command is the one that runs; definitions further down that lost are greyed out and tagged as `(shadowed)`.
 
 ```sh

@@ -1416,6 +1416,66 @@ fn format_group_source(group: &CommandGroup) -> String {
     }
 }
 
+/// The width of the terminal, `None` when stdout is not one (piped or redirected output should
+/// never be truncated). `TACO_COLUMNS` overrides the detected width, mainly for tests.
+fn terminal_width() -> Option<usize> {
+    if let Some(columns) = std::env::var_os("TACO_COLUMNS") {
+        return columns.to_str()?.parse().ok();
+    }
+
+    terminal_size::terminal_size().map(|(width, _)| width.0 as usize)
+}
+
+/// Greedily wrap a command line into the available columns, breaking between words. The flag on
+/// each line is whether it ends in an injected break, to be marked with a ` \` continuation so
+/// the displayed command is still valid shell (see [`continuation_marker`]). A single word longer
+/// than a full line (a long path, mostly) is never broken up — it would not be the same command
+/// anymore — it overflows on its own line instead.
+fn wrap_command(line: &str, available: Option<usize>) -> Vec<(String, bool)> {
+    let Some(available) = available else {
+        return vec![(line.to_owned(), false)];
+    };
+
+    // Keep room for the ` \` continuation marker, with a readability floor: below that the
+    // output is unreadable no matter what
+    let available = available.max(12) - 2;
+
+    let mut lines = vec![String::new()];
+    for word in line.split_whitespace() {
+        let current = lines.last_mut().expect("starts with one line");
+        let space = usize::from(!current.is_empty());
+        let free = available.saturating_sub(current.chars().count() + space);
+
+        if word.chars().count() <= free {
+            if space == 1 {
+                current.push(' ');
+            }
+            current.push_str(word);
+        } else if current.is_empty() {
+            current.push_str(word);
+        } else {
+            lines.push(word.to_owned());
+        }
+    }
+
+    let count = lines.len();
+    lines
+        .into_iter()
+        .enumerate()
+        .map(|(index, text)| (text, index + 1 < count))
+        .collect()
+}
+
+/// The ` \` marking an injected line break. Styled darker than the command itself, because it is
+/// not part of the command the user entered.
+fn continuation_marker(injected: bool) -> String {
+    if injected {
+        format!(" {}", "\\".bright_black())
+    } else {
+        String::new()
+    }
+}
+
 /// Print the resolved commands as a flat list: only the winning definition of each command, in
 /// alphabetical order. `print_grouped_commands` is the verbose variant showing where every
 /// command comes from.
@@ -1445,6 +1505,10 @@ fn print_flat_commands(groups: &[CommandGroup]) {
         .max()
         .unwrap_or(0);
 
+    // Long commands wrap inside the command column instead of running through it at the edge of
+    // the terminal
+    let available = terminal_width().map(|columns| columns.saturating_sub(5 + width + 2));
+
     for (name, command) in &commands {
         // Pad manually: format-width padding would count the invisible color codes
         let padding = " ".repeat(width - name.chars().count());
@@ -1454,11 +1518,23 @@ fn print_flat_commands(groups: &[CommandGroup]) {
             String::new()
         };
 
-        let mut lines = command.lines();
-        let first = lines.next().unwrap_or_default();
-        println!("taco {}{padding}  {}{tag}", name.blue(), first.dimmed());
-        for line in lines {
-            println!("     {}  {}", " ".repeat(width), line.dimmed());
+        let mut lines = command
+            .lines()
+            .flat_map(|line| wrap_command(line, available));
+        let (first, injected) = lines.next().unwrap_or_default();
+        println!(
+            "taco {}{padding}  {}{}{tag}",
+            name.blue(),
+            first.dimmed(),
+            continuation_marker(injected)
+        );
+        for (line, injected) in lines {
+            println!(
+                "     {}  {}{}",
+                " ".repeat(width),
+                line.dimmed(),
+                continuation_marker(injected)
+            );
         }
     }
 
@@ -1498,6 +1574,8 @@ fn print_grouped_commands(groups: &[CommandGroup]) {
         println!("{}", " \u{2219} There are no commands available.".red());
     }
 
+    let terminal_columns = terminal_width();
+
     let mut indent = String::new();
     for (index, group) in display.iter().enumerate() {
         let last_group = index + 1 == display.len();
@@ -1509,6 +1587,9 @@ fn print_grouped_commands(groups: &[CommandGroup]) {
             println!("{indent}{} {}", "└─".dimmed(), format_group_source(group));
             indent.push_str("   ");
         }
+
+        // Command lines start after the indentation, the branch and a space
+        let available = terminal_columns.map(|columns| columns.saturating_sub(indent.len() + 3));
 
         for (position, (name, command)) in group.commands.iter().enumerate() {
             let last = last_group && position + 1 == group.commands.len();
@@ -1533,8 +1614,16 @@ fn print_grouped_commands(groups: &[CommandGroup]) {
             };
 
             println!("{indent}{} taco {styled_name}{tag}", branch.dimmed());
-            for line in command.lines() {
-                println!("{indent}{} {}", continuation.dimmed(), line.dimmed());
+            for (line, injected) in command
+                .lines()
+                .flat_map(|line| wrap_command(line, available))
+            {
+                println!(
+                    "{indent}{} {}{}",
+                    continuation.dimmed(),
+                    line.dimmed(),
+                    continuation_marker(injected)
+                );
             }
         }
     }
