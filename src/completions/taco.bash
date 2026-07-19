@@ -42,7 +42,7 @@ _taco() {
       COMPREPLY=($(compgen -W "zsh bash fish" -- "$cur"))
       ;;
     print)
-      COMPREPLY=($(compgen -W "--json" -- "$cur"))
+      COMPREPLY=($(compgen -W "--json --verbose" -- "$cur"))
       ;;
     config)
       COMPREPLY=($(compgen -W "--local" -- "$cur"))

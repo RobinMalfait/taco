@@ -209,6 +209,10 @@ enum Commands {
         /// Print commands in JSON format
         #[clap(short, long)]
         json: bool,
+
+        /// Show where every command comes from, including shadowed definitions
+        #[clap(short, long)]
+        verbose: bool,
     },
 
     /// Open the config file in your editor
@@ -630,7 +634,7 @@ fn main() -> Result<()> {
             .chain(builtins.iter().map(String::as_str))
             .collect();
         if !print_did_you_mean("taco ", &did_you_mean(&alias, candidates)) {
-            print_grouped_commands(&config.resolve_project_grouped(&pwd, &local));
+            print_flat_commands(&config.resolve_project_grouped(&pwd, &local));
         }
         std::process::exit(1);
     };
@@ -847,7 +851,7 @@ fn run_builtin(command: Commands, pwd: PathBuf) -> Result<()> {
                     .map(String::as_str)
                     .collect();
                 if !print_did_you_mean("taco which ", &did_you_mean(&name, names)) {
-                    print_grouped_commands(&groups);
+                    print_flat_commands(&groups);
                 }
                 std::process::exit(1);
             }
@@ -1014,20 +1018,22 @@ fn run_builtin(command: Commands, pwd: PathBuf) -> Result<()> {
                     .map(String::as_str)
                     .collect();
                 if !print_did_you_mean("taco rm ", &did_you_mean(&name, names)) {
-                    print_grouped_commands(&groups);
+                    print_flat_commands(&groups);
                 }
             }
             std::process::exit(1);
         }
-        Commands::Print { json } => {
+        Commands::Print { json, verbose } => {
             let config = read_config()?;
             let local = read_local_projects(&pwd)?;
 
             if json {
                 let project = config.resolve_project(&pwd, &local);
                 println!("{}", serde_json::to_string_pretty(&project)?);
-            } else {
+            } else if verbose {
                 print_grouped_commands(&config.resolve_project_grouped(&pwd, &local));
+            } else {
+                print_flat_commands(&config.resolve_project_grouped(&pwd, &local));
             }
         }
         Commands::Config { local } => {
@@ -1410,64 +1416,132 @@ fn format_group_source(group: &CommandGroup) -> String {
     }
 }
 
-/// Print the resolved commands as a tree, grouped by the project they are defined in. Commands
-/// that are overridden by a deeper project are only shown in the group that won.
+/// Print the resolved commands as a flat list: only the winning definition of each command, in
+/// alphabetical order. `print_grouped_commands` is the verbose variant showing where every
+/// command comes from.
+fn print_flat_commands(groups: &[CommandGroup]) {
+    println!("Available commands:\n");
+
+    let builtins = builtin_names();
+
+    // The winning definition of each command: the last group that defines it
+    let mut commands: BTreeMap<&String, &String> = BTreeMap::new();
+    for group in groups {
+        for (name, command) in &group.commands {
+            commands.insert(name, command);
+        }
+    }
+
+    // No commands
+    let total = commands.len();
+    if total == 0 {
+        println!("{}", " \u{2219} There are no commands available.".red());
+    }
+
+    // Align the commands in a single column after the longest name
+    let width = commands
+        .keys()
+        .map(|name| name.chars().count())
+        .max()
+        .unwrap_or(0);
+
+    for (name, command) in &commands {
+        // Pad manually: format-width padding would count the invisible color codes
+        let padding = " ".repeat(width - name.chars().count());
+        let tag = if builtins.contains(name) {
+            " (shadows the builtin)".dimmed().to_string()
+        } else {
+            String::new()
+        };
+
+        let mut lines = command.lines();
+        let first = lines.next().unwrap_or_default();
+        println!("taco {}{padding}  {}{tag}", name.blue(), first.dimmed());
+        for line in lines {
+            println!("     {}  {}", " ".repeat(width), line.dimmed());
+        }
+    }
+
+    // Footer
+    println!(
+        "\n{}",
+        format!("{} command{}", total, if total == 1 { "" } else { "s" }).dimmed()
+    );
+}
+
+/// Print the resolved commands as a tree that mirrors the resolution order: the current project
+/// first, with every following source nested one level deeper. The first definition of a command
+/// wins; definitions that lost are dimmed and tagged as shadowed.
 fn print_grouped_commands(groups: &[CommandGroup]) {
     println!("Available commands:\n");
 
     let builtins = builtin_names();
 
-    // The group that wins each command: the last group that defines it
+    // Winning sources come first: the reverse of the root-first resolution order
+    let display: Vec<&CommandGroup> = groups
+        .iter()
+        .rev()
+        .filter(|group| !group.commands.is_empty())
+        .collect();
+
+    // The group that wins each command: the first group that defines it
     let mut winner: BTreeMap<&str, usize> = BTreeMap::new();
-    for (index, group) in groups.iter().enumerate() {
+    for (index, group) in display.iter().enumerate() {
         for name in group.commands.keys() {
-            winner.insert(name, index);
+            winner.entry(name).or_insert(index);
         }
     }
 
     // No commands
     let total = winner.len();
     if total == 0 {
-        println!("{}", " \u{2219} There are no commands available.\n".red());
+        println!("{}", " \u{2219} There are no commands available.".red());
     }
 
-    // Commands
-    for (index, group) in groups.iter().enumerate() {
-        let commands: Vec<_> = group
-            .commands
-            .iter()
-            .filter(|(name, _)| winner[name.as_str()] == index)
-            .collect();
+    let mut indent = String::new();
+    for (index, group) in display.iter().enumerate() {
+        let last_group = index + 1 == display.len();
 
-        if commands.is_empty() {
-            continue;
+        if index == 0 {
+            println!("{}", format_group_source(group));
+        } else {
+            println!("{indent}{}", "│".dimmed());
+            println!("{indent}{} {}", "└─".dimmed(), format_group_source(group));
+            indent.push_str("   ");
         }
 
-        println!("{}", format_group_source(group));
-        for (position, (name, command)) in commands.iter().enumerate() {
-            let last = position + 1 == commands.len();
+        for (position, (name, command)) in group.commands.iter().enumerate() {
+            let last = last_group && position + 1 == group.commands.len();
             let (branch, continuation) = if last {
                 ("└─", "  ")
             } else {
                 ("├─", "│ ")
             };
 
-            let shadows = if builtins.iter().any(|builtin| builtin == *name) {
-                " (shadows the builtin)".dimmed().to_string()
+            let (styled_name, tag) = if winner[name.as_str()] != index {
+                (
+                    name.dimmed().to_string(),
+                    " (shadowed)".dimmed().to_string(),
+                )
+            } else if builtins.contains(name) {
+                (
+                    name.blue().to_string(),
+                    " (shadows the builtin)".dimmed().to_string(),
+                )
             } else {
-                String::new()
+                (name.blue().to_string(), String::new())
             };
-            println!("  {} taco {}{shadows}", branch.dimmed(), name.blue());
+
+            println!("{indent}{} taco {styled_name}{tag}", branch.dimmed());
             for line in command.lines() {
-                println!("  {} {}", continuation.dimmed(), line.dimmed());
+                println!("{indent}{} {}", continuation.dimmed(), line.dimmed());
             }
         }
-        println!();
     }
 
     // Footer
     println!(
-        "{}",
+        "\n{}",
         format!("{} command{}", total, if total == 1 { "" } else { "s" }).dimmed()
     );
 }

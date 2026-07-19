@@ -312,23 +312,38 @@ If the alias is attached to a parent directory instead, taco tells you where it 
 
 #### Print – `taco print`
 
-Commands are grouped by where they are defined — parent directories and aliases first, the current project last. Commands that are overridden by a deeper project only show up in the group that won.
+A flat list of every command available in the current directory, after resolution — what you see is what runs:
 
 ```sh
 taco print
 # Available commands:
 #
-# /Users/robin/github.com
-#   ├─ taco tdd
-#   │    ./node_modules/.bin/vitest --watch
-#   └─ taco test
-#        ./node_modules/.bin/vitest
-#
-# /Users/robin/github.com/RobinMalfait/taco
-#   └─ taco build
-#        cargo build --release
+# taco build  cargo build --release
+# taco tdd    ./node_modules/.bin/vitest --watch
+# taco test   ./node_modules/.bin/vitest
 #
 # 3 commands
+```
+
+Add `--verbose` (or `-v`) to see where every command comes from: a tree that mirrors the resolution order (see [Which command wins](#which-command-wins)), the current project first, with every parent directory, alias and `.taco.json` nested one level deeper. The first definition of a command is the one that runs; definitions further down that lost are greyed out and tagged as `(shadowed)`.
+
+```sh
+taco print --verbose
+# Available commands:
+#
+# /Users/robin/github.com/RobinMalfait/taco
+# ├─ taco build
+# │  cargo build --release
+# │
+# └─ /Users/robin/github.com
+#    ├─ taco tdd
+#    │  ./node_modules/.bin/vitest --watch
+#    ├─ taco build (shadowed)
+#    │  ./node_modules/.bin/esbuild
+#    └─ taco test
+#       ./node_modules/.bin/vitest
+#
+# 4 commands
 ```
 
 Or..

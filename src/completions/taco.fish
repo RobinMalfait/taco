@@ -30,6 +30,7 @@ complete -c taco -n '__taco_using_command alias' -f -a "(command taco __complete
 complete -c taco -n '__taco_using_command unalias' -f -a "(command taco __complete aliases 2>/dev/null)"
 complete -c taco -n '__taco_using_command completions' -f -a 'zsh bash fish'
 complete -c taco -n '__taco_using_command print' -f -s j -l json -d 'Print commands in JSON format'
+complete -c taco -n '__taco_using_command print' -f -s v -l verbose -d 'Show where every command comes from'
 complete -c taco -n '__taco_using_command doctor' -f -l fix -d 'Remove the reported issues from the config'
 complete -c taco -n '__taco_using_command add' -l local -d 'Store the command in the .taco.json of the current directory'
 complete -c taco -n '__taco_using_command edit' -l local -d 'Edit the command in the .taco.json of the current directory'

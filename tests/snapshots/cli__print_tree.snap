@@ -1,0 +1,26 @@
+---
+source: tests/cli.rs
+expression: "sandbox.taco_in(&sandbox.nested(), &[\"print\"])"
+snapshot_kind: text
+---
+exit code: 0
+----- stdout -----
+Available commands:
+
+<root>/project/nested
+├─ taco test
+│  echo nested-test
+│
+└─ <root>/project
+   ├─ taco tdd
+   │  echo parent-tdd
+   ├─ taco test (shadowed)
+   │  echo parent-test
+   │
+   └─ <root>/project/.taco.json
+      ├─ taco build
+      │  echo local-build
+      └─ taco test (shadowed)
+         echo local-test
+
+3 commands

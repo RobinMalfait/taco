@@ -75,7 +75,9 @@ _taco() {
           (( ${#reply} )) && _describe -t aliases 'alias' reply
           ;;
         print)
-          _arguments '(-j --json)'{-j,--json}'[Print commands in JSON format]'
+          _arguments \
+            '(-j --json)'{-j,--json}'[Print commands in JSON format]' \
+            '(-v --verbose)'{-v,--verbose}'[Show where every command comes from]'
           ;;
         completions)
           _values 'shell' zsh bash fish

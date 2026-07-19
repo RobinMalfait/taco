@@ -521,7 +521,10 @@ fn rm_local_removes_and_cleans_up_the_file() {
     sandbox.taco(&["add", "--local", "build", "--", "echo", "local-build"]);
     sandbox.taco(&["add", "--local", "test", "--", "echo", "local-test"]);
 
-    assert_snapshot!("rm_local_removed", sandbox.taco(&["rm", "--local", "build"]));
+    assert_snapshot!(
+        "rm_local_removed",
+        sandbox.taco(&["rm", "--local", "build"])
+    );
     assert_snapshot!("rm_local_file_after", sandbox.local_config_contents());
 
     // Removing the last command deletes the now empty file
@@ -593,4 +596,27 @@ fn a_flat_taco_json_is_rejected() {
         "{output}"
     );
     assert!(output.contains("unknown field"), "{output}");
+}
+
+#[test]
+fn print_shows_the_resolution_order_as_a_tree() {
+    let sandbox = Sandbox::new();
+    sandbox.taco(&["add", "tdd", "--", "echo", "parent-tdd"]);
+    sandbox.taco(&["add", "test", "--", "echo", "parent-test"]);
+    sandbox.taco_in(
+        &sandbox.nested(),
+        &["add", "test", "--", "echo", "nested-test"],
+    );
+    sandbox.write_local_config(
+        r#"{"commands": {"build": "echo local-build", "test": "echo local-test"}}"#,
+    );
+
+    // The default is a flat list of the commands that actually run
+    assert_snapshot!("print_flat", sandbox.taco_in(&sandbox.nested(), &["print"]));
+
+    // The verbose variant shows every source and the definitions that lost
+    assert_snapshot!(
+        "print_tree",
+        sandbox.taco_in(&sandbox.nested(), &["print", "--verbose"])
+    );
 }

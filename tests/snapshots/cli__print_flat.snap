@@ -1,6 +1,6 @@
 ---
 source: tests/cli.rs
-expression: "sandbox.taco(&[\"print\"])"
+expression: "sandbox.taco_in(&sandbox.nested(), &[\"print\"])"
 snapshot_kind: text
 ---
 exit code: 0
@@ -8,5 +8,7 @@ exit code: 0
 Available commands:
 
 taco build  echo local-build
+taco tdd    echo parent-tdd
+taco test   echo nested-test
 
-1 command
+3 commands
