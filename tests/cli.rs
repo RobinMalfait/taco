@@ -698,3 +698,34 @@ fn doctor_keeps_an_alias_guarding_an_intermediate_command() {
 
     assert_snapshot!("doctor_guarding_alias_kept", sandbox.taco(&["doctor"]));
 }
+
+#[test]
+fn a_closed_stdout_pipe_does_not_panic() {
+    let sandbox = Sandbox::new();
+
+    // Enough output to overflow the pipe buffer, so taco is still writing when we hang up
+    let commands: Vec<String> = (0..2000)
+        .map(|i| format!(r#""command-{i:04}": "echo {}""#, "x".repeat(200)))
+        .collect();
+    sandbox.write_config(&format!(
+        r#"{{"projects": {{"{}": {{{}}}}}}}"#,
+        sandbox.project.display(),
+        commands.join(", ")
+    ));
+
+    let mut child = {
+        let mut command = sandbox.taco_command(&sandbox.project);
+        command.arg("ls");
+        command.spawn().unwrap()
+    };
+
+    // Close both ends without reading, like `taco ls | head` after head exits
+    drop(child.stdin.take());
+    drop(child.stdout.take());
+    let output = child.wait_with_output().unwrap();
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!stderr.contains("panic"), "{stderr}");
+    // Killed by SIGPIPE instead of exiting with a panic
+    assert_eq!(output.status.code(), None);
+}

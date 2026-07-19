@@ -596,6 +596,14 @@ struct CommandGroup {
 }
 
 fn main() -> Result<()> {
+    // Die quietly when the reading end of a pipe closes early (`taco ls | head`), like any other
+    // CLI, instead of panicking on the broken pipe. Rust ignores SIGPIPE by default, turning it
+    // into an io::Error that `println!` panics on.
+    #[cfg(unix)]
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
+
     color_eyre::install()?;
 
     let argv: Vec<String> = std::env::args().collect();
