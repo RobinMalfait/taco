@@ -88,6 +88,41 @@ Everyone on the team gets these commands right after cloning. They follow the sa
 
 Note: as with a `Makefile` or npm scripts, running a command from a freshly cloned repository executes whatever the author put there — taco never runs anything you didn't explicitly invoke, but do glance at `taco print` in repositories you don't trust yet.
 
+#### Which command wins
+
+When you run `taco test`, the command can be defined in several places at once. Taco looks for it in this order — the first match wins:
+
+1. Your own commands for the current directory (`projects` in your config)
+2. Commands inherited via aliases attached to the current directory (`aliases` in your config)
+3. The `.taco.json` in the current directory
+4. The same three steps for the parent directory
+5. ... and so on, all the way up to the root of the filesystem
+
+Read top to bottom, the first match wins:
+
+```
+~/projects/app                 ← the current directory
+├─ 1. your commands            (config)
+├─ 2. your aliases             (config)
+├─ 3. .taco.json
+│
+└─ ~/projects                  ← its parent
+   ├─ 4. your commands         (config)
+   ├─ 5. your aliases          (config)
+   ├─ 6. .taco.json
+   │
+   └─ /                        ← … and so on, up to the filesystem root
+      ├─ 7. your commands      (config)
+      ├─ 8. your aliases       (config)
+      ├─ 9. .taco.json
+      │
+      └─ 10. taco's builtin subcommands
+```
+
+In short: deeper directories win over parents, and within the same directory your personal config wins over aliases, which win over the shared `.taco.json`. When multiple aliases are attached to the same directory, the one added last wins.
+
+The builtin subcommands come after all of the above — your commands always win over them (see below). Use `taco which {name}` to see where a command comes from, including the definitions it shadows.
+
 #### Your commands win
 
 Your commands always win over taco's builtin subcommands, so a new taco version can never break your existing commands. If you define a command named `config`, then `taco config` runs _your_ command.
