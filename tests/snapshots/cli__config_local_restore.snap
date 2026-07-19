@@ -1,0 +1,10 @@
+---
+source: tests/cli.rs
+expression: "sandbox.taco_with_editor(&breaker, &[\"config\", \"--local\"], \"r\\n\")"
+snapshot_kind: text
+---
+exit code: 0
+----- stdout -----
+Invalid config file: <root>/project/.taco.json: key must be a string at line 1 column 2
+
+What now? (e)dit again / (r)estore previous config / (k)eep it broken Restored the previous config

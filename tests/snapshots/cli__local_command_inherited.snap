@@ -1,0 +1,8 @@
+---
+source: tests/cli.rs
+expression: "sandbox.taco_in(&sandbox.nested(), &[\"build\"])"
+snapshot_kind: text
+---
+exit code: 0
+----- stdout -----
+local-build

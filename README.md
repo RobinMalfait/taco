@@ -67,6 +67,27 @@ This is how I use it personally:
 }
 ```
 
+#### Sharing commands – `.taco.json`
+
+Everything above lives in your personal config, but commands can also be committed alongside a project. Any directory can contain a `.taco.json` file:
+
+```json
+{
+  "commands": {
+    "build": "cargo build --release",
+    "test": "cargo nextest run"
+  }
+}
+```
+
+(The commands are scoped under a `commands` key so the format can grow later without breaking existing files.)
+
+Everyone on the team gets these commands right after cloning. They follow the same inheritance rules as your own commands: they are visible in subdirectories, and deeper directories win over parents. Within the same directory your personal commands and aliases win over the repo-local ones, so `taco add` always lets you override a shared command for yourself.
+
+`taco print` and `taco which` show these commands with the `.taco.json` file they come from. You don't have to write the file by hand either: `taco add --local`, `taco edit --local` and `taco rm --local` manage the `.taco.json` of the current directory (removing the last command also removes the file), and `taco config --local` opens it in your editor. Without `--local`, those commands only ever touch your personal config.
+
+Note: as with a `Makefile` or npm scripts, running a command from a freshly cloned repository executes whatever the author put there — taco never runs anything you didn't explicitly invoke, but do glance at `taco print` in repositories you don't trust yet.
+
 #### Your commands win
 
 Your commands always win over taco's builtin subcommands, so a new taco version can never break your existing commands. If you define a command named `config`, then `taco config` runs _your_ command.
@@ -135,6 +156,8 @@ taco add ls -- ls -lah
 Performs the same action as above, but without opening an editor. This is useful
 if it's a simple one-liner command.
 
+Both forms accept `--local` to store the command in the `.taco.json` of the current directory instead of your personal config, so it can be committed and shared. If your personal config defines the same command in the same directory, taco notes that yours wins.
+
 #### Edit – `taco edit {name}`
 
 ```sh
@@ -142,6 +165,8 @@ taco edit ls
 ```
 
 This will open your default editor (`$VISUAL`, falling back to `$EDITOR`) to edit the command. The current command will be pre-filled. Lines with `#` at the start will be ignored.
+
+With `--local`, this edits the command in the `.taco.json` of the current directory instead.
 
 #### Execute – `taco {name} -- {passthrough arguments}`
 
@@ -290,11 +315,15 @@ taco rm ls
 
 `taco rm` only removes commands defined in the current directory itself. If the command is inherited from a parent directory or an alias, taco tells you where it is defined and how to remove it there.
 
+With `--local`, this removes the command from the `.taco.json` of the current directory instead; removing the last command also removes the file.
+
 #### Config – `taco config`
 
 Opens `~/.config/taco/taco.json` in your default editor (`$VISUAL`, falling back to `$EDITOR`). This is the easiest way to define the commands of named projects like `vitest`, since `taco add` always works on the current directory.
 
-The config is validated when you close the editor, so mistakes are caught immediately instead of at the next `taco` invocation.
+The config is validated when you close the editor, so mistakes are caught immediately instead of at the next `taco` invocation. When the edit left the config broken, taco asks what to do next: re-open the editor to fix it (the default), restore the config from before the edit, or keep the broken file.
+
+With `--local`, this opens the `.taco.json` of the current directory instead (creating it when missing), with the same validation and recovery prompt.
 
 Set the `TACO_CONFIG` environment variable to use a different config file location.
 

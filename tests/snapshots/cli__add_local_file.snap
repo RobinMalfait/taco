@@ -1,0 +1,10 @@
+---
+source: tests/cli.rs
+expression: sandbox.local_config_contents()
+snapshot_kind: text
+---
+{
+  "commands": {
+    "build": "echo local-build"
+  }
+}

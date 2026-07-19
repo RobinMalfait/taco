@@ -49,13 +49,22 @@ _taco() {
         taco)
           _describe -t subcommands 'taco builtin' builtins
           ;;
-        edit|which)
+        add)
+          _arguments '--local[Store the command in the .taco.json of the current directory]' '*: :_default'
+          ;;
+        edit)
+          _taco_items commands
+          reply+=('--local:Edit the command in the .taco.json of the current directory')
+          _describe -t aliases 'alias' reply
+          ;;
+        which)
           _taco_items commands
           (( ${#reply} )) && _describe -t aliases 'alias' reply
           ;;
         rm)
           _taco_items local-commands
-          (( ${#reply} )) && _describe -t aliases 'alias' reply
+          reply+=('--local:Remove the command from the .taco.json of the current directory')
+          _describe -t aliases 'alias' reply
           ;;
         alias)
           _taco_items projects
@@ -72,6 +81,7 @@ _taco() {
           _values 'shell' zsh bash fish
           ;;
         config)
+          _arguments '--local[Open the .taco.json of the current directory]'
           ;;
         doctor)
           _arguments '--fix[Remove the reported issues from the config]'

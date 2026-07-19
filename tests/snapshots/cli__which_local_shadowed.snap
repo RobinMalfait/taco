@@ -1,0 +1,15 @@
+---
+source: tests/cli.rs
+expression: "sandbox.taco(&[\"which\", \"build\"])"
+snapshot_kind: text
+---
+exit code: 0
+----- stdout -----
+taco build
+  echo personal-build
+
+Defined in <root>/project
+
+Shadowed definitions:
+  <root>/project/.taco.json
+    echo local-build

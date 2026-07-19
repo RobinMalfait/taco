@@ -63,11 +63,21 @@ impl Sandbox {
         self.spawn(command, stdin)
     }
 
-    /// Run `taco config` with the given editor script, answering the recovery prompt via stdin.
-    fn taco_config(&self, editor: &Path, stdin: &str) -> String {
+    /// Run taco with the given editor script available as `$EDITOR`.
+    fn taco_with_editor(&self, editor: &Path, arguments: &[&str], stdin: &str) -> String {
         let mut command = self.taco_command(&self.project);
-        command.arg("config").env("EDITOR", editor);
+        command.args(arguments).env("EDITOR", editor);
         self.spawn(command, stdin)
+    }
+
+    /// Write a repo-local `.taco.json` in the project directory.
+    fn write_local_config(&self, json: &str) {
+        fs::write(self.project.join(".taco.json"), json).unwrap();
+    }
+
+    /// The `.taco.json` contents of the project directory, normalized for snapshots.
+    fn local_config_contents(&self) -> String {
+        self.normalize(&fs::read_to_string(self.project.join(".taco.json")).unwrap())
     }
 
     /// Write an executable script that can act as `$EDITOR`, receiving the config file as `$1`.
@@ -349,6 +359,58 @@ fn the_config_location_can_be_overridden() {
 }
 
 #[test]
+fn local_taco_json_commands_are_available() {
+    let sandbox = Sandbox::new();
+    sandbox.write_local_config(r#"{"commands": {"build": "echo local-build"}}"#);
+
+    assert_snapshot!("local_command_runs", sandbox.taco(&["build"]));
+    assert_snapshot!(
+        "local_command_inherited",
+        sandbox.taco_in(&sandbox.nested(), &["build"])
+    );
+    assert_snapshot!("local_command_print", sandbox.taco(&["print"]));
+}
+
+#[test]
+fn personal_commands_win_over_local_ones() {
+    let sandbox = Sandbox::new();
+    sandbox.write_local_config(r#"{"commands": {"build": "echo local-build"}}"#);
+    sandbox.taco(&["add", "build", "--", "echo", "personal-build"]);
+
+    assert_snapshot!("personal_wins_over_local", sandbox.taco(&["build"]));
+    assert_snapshot!("which_local_shadowed", sandbox.taco(&["which", "build"]));
+}
+
+#[test]
+fn rm_points_at_the_local_file() {
+    let sandbox = Sandbox::new();
+    sandbox.write_local_config(r#"{"commands": {"build": "echo local-build"}}"#);
+
+    assert_snapshot!("rm_local_file_hint", sandbox.taco(&["rm", "build"]));
+}
+
+#[test]
+fn a_broken_local_config_is_reported_but_does_not_block_builtins() {
+    let sandbox = Sandbox::new();
+    sandbox.write_local_config("{broken");
+
+    // Running a command reports the broken file. Not snapshotted: the eyre report includes
+    // source locations that would make the snapshot brittle.
+    let output = sandbox.taco(&["build"]);
+    assert!(output.contains("exit code: 1"), "{output}");
+    assert!(
+        output.contains("Invalid config file: <root>/project/.taco.json"),
+        "{output}"
+    );
+
+    // Builtins that do not resolve commands keep working
+    assert_snapshot!(
+        "broken_local_config_add_still_works",
+        sandbox.taco(&["add", "greet", "--", "echo", "hello"])
+    );
+}
+
+#[test]
 fn a_broken_config_edit_can_be_restored() {
     let sandbox = Sandbox::new();
     sandbox.taco(&["add", "greet", "--", "echo", "hello"]);
@@ -356,7 +418,10 @@ fn a_broken_config_edit_can_be_restored() {
 
     let breaker = sandbox.editor("break-config", r#"echo '{broken' > "$1""#);
 
-    assert_snapshot!("config_restore", sandbox.taco_config(&breaker, "r\n"));
+    assert_snapshot!(
+        "config_restore",
+        sandbox.taco_with_editor(&breaker, &["config"], "r\n")
+    );
     assert_eq!(sandbox.config_contents(), valid);
 }
 
@@ -376,7 +441,10 @@ fn a_broken_config_edit_can_be_edited_again() {
         ),
     );
 
-    assert_snapshot!("config_edit_again", sandbox.taco_config(&fixer, "e\n"));
+    assert_snapshot!(
+        "config_edit_again",
+        sandbox.taco_with_editor(&fixer, &["config"], "e\n")
+    );
     assert_eq!(sandbox.config_contents(), valid);
 }
 
@@ -387,7 +455,10 @@ fn a_broken_config_edit_can_be_kept() {
 
     let breaker = sandbox.editor("break-config", r#"echo '{broken' > "$1""#);
 
-    assert_snapshot!("config_keep_broken", sandbox.taco_config(&breaker, "k\n"));
+    assert_snapshot!(
+        "config_keep_broken",
+        sandbox.taco_with_editor(&breaker, &["config"], "k\n")
+    );
     assert_snapshot!("config_broken_contents", sandbox.config_contents());
 }
 
@@ -399,7 +470,10 @@ fn an_unanswered_recovery_prompt_keeps_the_broken_config() {
     let breaker = sandbox.editor("break-config", r#"echo '{broken' > "$1""#);
 
     // EOF on stdin, like non-interactive use, reports the failure and bails
-    assert_snapshot!("config_prompt_eof", sandbox.taco_config(&breaker, ""));
+    assert_snapshot!(
+        "config_prompt_eof",
+        sandbox.taco_with_editor(&breaker, &["config"], "")
+    );
     assert!(sandbox.config_contents().contains("{broken"));
 }
 
@@ -413,6 +487,110 @@ fn restore_is_not_offered_when_the_config_was_already_broken() {
     // There is no valid config to restore, so `r` is not an option and falls through to EOF
     assert_snapshot!(
         "config_no_restore_option",
-        sandbox.taco_config(&breaker, "r\n")
+        sandbox.taco_with_editor(&breaker, &["config"], "r\n")
     );
+}
+
+#[test]
+fn add_local_stores_the_command_in_the_taco_json() {
+    let sandbox = Sandbox::new();
+
+    assert_snapshot!(
+        "add_local",
+        sandbox.taco(&["add", "--local", "build", "--", "echo", "local-build"])
+    );
+    assert_snapshot!("add_local_file", sandbox.local_config_contents());
+    assert_snapshot!("add_local_runs", sandbox.taco(&["build"]));
+}
+
+#[test]
+fn add_local_notes_when_a_personal_command_shadows_it() {
+    let sandbox = Sandbox::new();
+    sandbox.taco(&["add", "build", "--", "echo", "personal-build"]);
+
+    assert_snapshot!(
+        "add_local_shadowed_note",
+        sandbox.taco(&["add", "--local", "build", "--", "echo", "local-build"])
+    );
+    assert_snapshot!("add_local_shadowed_runs", sandbox.taco(&["build"]));
+}
+
+#[test]
+fn rm_local_removes_and_cleans_up_the_file() {
+    let sandbox = Sandbox::new();
+    sandbox.taco(&["add", "--local", "build", "--", "echo", "local-build"]);
+    sandbox.taco(&["add", "--local", "test", "--", "echo", "local-test"]);
+
+    assert_snapshot!("rm_local_removed", sandbox.taco(&["rm", "--local", "build"]));
+    assert_snapshot!("rm_local_file_after", sandbox.local_config_contents());
+
+    // Removing the last command deletes the now empty file
+    assert_snapshot!("rm_local_last", sandbox.taco(&["rm", "--local", "test"]));
+    assert!(!sandbox.project.join(".taco.json").exists());
+
+    // Removing from a directory without a `.taco.json` suggests nothing to remove
+    assert_snapshot!(
+        "rm_local_missing",
+        sandbox.taco(&["rm", "--local", "build"])
+    );
+}
+
+#[test]
+fn edit_local_edits_the_taco_json() {
+    let sandbox = Sandbox::new();
+    sandbox.taco(&["add", "--local", "build", "--", "echo", "local-build"]);
+
+    let editor = sandbox.editor("edit-command", r#"echo 'echo edited-build' > "$1""#);
+    assert_snapshot!(
+        "edit_local",
+        sandbox.taco_with_editor(&editor, &["edit", "--local", "build"], "")
+    );
+    assert_snapshot!("edit_local_runs", sandbox.taco(&["build"]));
+
+    // Editing a command that is not in the file suggests the ones that are
+    assert_snapshot!(
+        "edit_local_typo",
+        sandbox.taco_with_editor(&editor, &["edit", "--local", "biuld"], "")
+    );
+}
+
+#[test]
+fn config_local_opens_the_taco_json_with_the_recovery_prompt() {
+    let sandbox = Sandbox::new();
+    sandbox.taco(&["add", "--local", "build", "--", "echo", "local-build"]);
+    let valid = sandbox.local_config_contents();
+
+    let breaker = sandbox.editor("break-config", r#"echo '{broken' > "$1""#);
+    assert_snapshot!(
+        "config_local_restore",
+        sandbox.taco_with_editor(&breaker, &["config", "--local"], "r\n")
+    );
+    assert_eq!(sandbox.local_config_contents(), valid);
+}
+
+#[test]
+fn config_local_creates_the_file_when_missing() {
+    let sandbox = Sandbox::new();
+
+    let noop = sandbox.editor("noop-editor", ":");
+    assert_snapshot!(
+        "config_local_creates_file",
+        sandbox.taco_with_editor(&noop, &["config", "--local"], "")
+    );
+    assert_snapshot!("config_local_default_file", sandbox.local_config_contents());
+}
+
+#[test]
+fn a_flat_taco_json_is_rejected() {
+    let sandbox = Sandbox::new();
+    sandbox.write_local_config(r#"{"build": "echo local-build"}"#);
+
+    // Not snapshotted: the eyre report includes source locations that would make it brittle
+    let output = sandbox.taco(&["print"]);
+    assert!(output.contains("exit code: 1"), "{output}");
+    assert!(
+        output.contains("Invalid config file: <root>/project/.taco.json"),
+        "{output}"
+    );
+    assert!(output.contains("unknown field"), "{output}");
 }

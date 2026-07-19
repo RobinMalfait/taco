@@ -1,0 +1,8 @@
+---
+source: tests/cli.rs
+expression: "sandbox.taco(&[\"build\"])"
+snapshot_kind: text
+---
+exit code: 0
+----- stdout -----
+personal-build

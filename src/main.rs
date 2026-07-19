@@ -156,12 +156,22 @@ enum Commands {
 
         /// The actual command to run
         arguments: Option<Vec<String>>,
+
+        /// Store the command in the `.taco.json` of the current directory instead of your own
+        /// config, so it can be committed and shared
+        #[clap(long)]
+        local: bool,
     },
 
     /// Edit a command
     Edit {
         /// The name of the alias to edit
         name: String,
+
+        /// Edit the command in the `.taco.json` of the current directory instead of your own
+        /// config
+        #[clap(long)]
+        local: bool,
     },
 
     /// Show where a command is defined
@@ -187,6 +197,11 @@ enum Commands {
     Remove {
         /// The name of the alias to remove
         name: String,
+
+        /// Remove the command from the `.taco.json` of the current directory instead of your own
+        /// config
+        #[clap(long)]
+        local: bool,
     },
 
     /// Print all the commands
@@ -197,7 +212,11 @@ enum Commands {
     },
 
     /// Open the config file in your editor
-    Config,
+    Config {
+        /// Open the `.taco.json` of the current directory instead of your own config
+        #[clap(long)]
+        local: bool,
+    },
 
     /// Check the config for stale projects and dead aliases
     Doctor {
@@ -327,7 +346,11 @@ impl Config {
     /// Get the resolved commands, grouped by the project they are defined in, ordered from the
     /// root of the filesystem down to the project itself. Groups can contain commands that are
     /// overridden by a later group.
-    fn resolve_project_grouped(&self, project: &Path) -> Vec<CommandGroup> {
+    ///
+    /// `local` holds the repo-local `.taco.json` commands, keyed by the directory they were found
+    /// in (see [`read_local_projects`]). Within the same directory your personal commands and
+    /// aliases win over the repo-local ones.
+    fn resolve_project_grouped(&self, project: &Path, local: &LocalProjects) -> Vec<CommandGroup> {
         let mut ancestors: Vec<&Path> = project.ancestors().collect();
         ancestors.reverse();
 
@@ -337,6 +360,16 @@ impl Config {
                 continue;
             };
 
+            // Repo-local commands, committed alongside the project
+            if let Some(commands) = local.get(key) {
+                groups.push(CommandGroup {
+                    source: format!("{key}/{LOCAL_CONFIG_FILE}"),
+                    via: None,
+                    local: true,
+                    commands: commands.clone(),
+                });
+            }
+
             // Commands inherited via aliases
             if let Some(aliases) = self.aliases.get(key) {
                 for alias in aliases {
@@ -344,6 +377,7 @@ impl Config {
                         groups.push(CommandGroup {
                             source: alias.to_owned(),
                             via: Some(key.to_owned()),
+                            local: false,
                             commands: commands.clone(),
                         });
                     }
@@ -355,6 +389,7 @@ impl Config {
                 groups.push(CommandGroup {
                     source: key.to_owned(),
                     via: None,
+                    local: false,
                     commands: commands.clone(),
                 });
             }
@@ -417,14 +452,67 @@ impl Config {
 
     /// Get the resolved commands, these are the commands of the current project, merged with all
     /// the parent projects. Deeper projects win over their parents.
-    fn resolve_project(&self, project: &Path) -> Project {
+    fn resolve_project(&self, project: &Path, local: &LocalProjects) -> Project {
         let mut commands = Project::new();
-        for group in self.resolve_project_grouped(project) {
+        for group in self.resolve_project_grouped(project, local) {
             commands.extend(group.commands);
         }
 
         commands
     }
+}
+
+/// Repo-local commands, keyed by the directory their `.taco.json` was found in.
+type LocalProjects = BTreeMap<String, Project>;
+
+/// The name of the repo-local config file, committed alongside a project to share its commands.
+const LOCAL_CONFIG_FILE: &str = ".taco.json";
+
+/// A repo-local `.taco.json` file. The commands are scoped under a key on purpose, so that the
+/// format can grow (a version field, ...) without breaking existing files. Unknown keys are
+/// rejected so that files written for a future format fail loudly instead of being ignored.
+#[derive(Debug, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LocalConfig {
+    /// The commands of the project, as a `{"name": "command"}` map
+    #[serde(default)]
+    commands: Project,
+}
+
+/// Read the `.taco.json` of a single directory, `Ok(None)` when the directory has none.
+fn read_local_config(dir: &Path) -> Result<Option<LocalConfig>> {
+    let file_path = dir.join(LOCAL_CONFIG_FILE);
+    match fs::read(&file_path) {
+        Ok(contents) => serde_json::from_slice(&contents)
+            .map(Some)
+            .wrap_err_with(|| format!("Invalid config file: {}", file_path.display())),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => {
+            Err(e).wrap_err_with(|| format!("Could not read config file: {}", file_path.display()))
+        }
+    }
+}
+
+fn write_local_config(dir: &Path, config: &LocalConfig) -> Result<()> {
+    // The trailing newline keeps the committed file friendly to git and other tools
+    let contents = format!("{}\n", serde_json::to_string_pretty(config)?);
+    write_raw(&dir.join(LOCAL_CONFIG_FILE), contents.as_bytes())
+}
+
+/// Find the repo-local `.taco.json` files between the root of the filesystem and `pwd`.
+fn read_local_projects(pwd: &Path) -> Result<LocalProjects> {
+    let mut local = LocalProjects::new();
+    for ancestor in pwd.ancestors() {
+        let Some(key) = ancestor.to_str() else {
+            continue;
+        };
+
+        if let Some(config) = read_local_config(ancestor)? {
+            local.insert(key.to_owned(), config.commands);
+        }
+    }
+
+    Ok(local)
 }
 
 /// The issues `taco doctor` found in the config.
@@ -455,6 +543,9 @@ struct CommandGroup {
 
     /// The project that pulled these commands in via an alias, if any
     via: Option<String>,
+
+    /// Whether the commands come from a repo-local `.taco.json` file instead of your own config
+    local: bool,
 
     /// The commands defined in the source project
     commands: Project,
@@ -492,14 +583,17 @@ fn main() -> Result<()> {
         return run_builtin(command, pwd);
     }
 
-    // Your own commands always win over the builtin subcommands. An unreadable config falls
-    // through, so that the builtins (like `taco config` to fix it) stay reachable.
+    // Your own commands always win over the builtin subcommands. An unreadable config (or
+    // `.taco.json`) falls through, so that the builtins (like `taco config` to fix it) stay
+    // reachable; the fallthrough reports the broken file when the candidate is not a builtin.
     if let Some(candidate) = scan.candidate.as_deref()
         && candidate != "__complete"
         && let Ok(config) = read_config()
     {
         let pwd = canonicalize_pwd(Path::new(scan.pwd.as_deref().unwrap_or(".")))?;
-        let project = config.resolve_project(&pwd);
+        let project = read_local_projects(&pwd)
+            .map(|local| config.resolve_project(&pwd, &local))
+            .unwrap_or_default();
 
         if let Some(command) = project.get(candidate) {
             let args = AliasCli::parse();
@@ -522,9 +616,11 @@ fn main() -> Result<()> {
             return Ok(());
         };
 
-        // The command does not exist — it would have been executed above otherwise
+        // The command does not exist — it would have been executed above otherwise. A broken
+        // config or `.taco.json` also ends up here, and gets reported through the `?`.
         let config = read_config()?;
-        let project = config.resolve_project(&pwd);
+        let local = read_local_projects(&pwd)?;
+        let project = config.resolve_project(&pwd, &local);
 
         println!("Command `{}` does not exist.\n", alias.blue());
         let builtins = builtin_names();
@@ -534,7 +630,7 @@ fn main() -> Result<()> {
             .chain(builtins.iter().map(String::as_str))
             .collect();
         if !print_did_you_mean("taco ", &did_you_mean(&alias, candidates)) {
-            print_grouped_commands(&config.resolve_project_grouped(&pwd));
+            print_grouped_commands(&config.resolve_project_grouped(&pwd, &local));
         }
         std::process::exit(1);
     };
@@ -553,7 +649,11 @@ fn run_builtin(command: Commands, pwd: PathBuf) -> Result<()> {
         Commands::Taco => {
             Cli::command().print_help()?;
         }
-        Commands::Add { name, arguments } => {
+        Commands::Add {
+            name,
+            arguments,
+            local,
+        } => {
             if name == "taco" || name == "__complete" {
                 println!(
                     "{}",
@@ -562,7 +662,14 @@ fn run_builtin(command: Commands, pwd: PathBuf) -> Result<()> {
                 std::process::exit(1);
             }
 
+            // Read both stores up front, so a broken file is caught before the editor opens
             let mut config = read_config()?;
+            let mut local_config = if local {
+                read_local_config(&pwd)?.unwrap_or_default()
+            } else {
+                LocalConfig::default()
+            };
+
             let command = match arguments {
                 Some(args) => args.join(" "),
                 None => {
@@ -575,10 +682,15 @@ fn run_builtin(command: Commands, pwd: PathBuf) -> Result<()> {
                 }
             };
 
-            let existing = config
-                .projects
-                .get(path_key(&pwd)?)
-                .and_then(|project| project.get(&name));
+            let existing = if local {
+                local_config.commands.get(&name).cloned()
+            } else {
+                config
+                    .projects
+                    .get(path_key(&pwd)?)
+                    .and_then(|project| project.get(&name))
+                    .cloned()
+            };
 
             if let Some(existing) = existing {
                 println!(
@@ -596,15 +708,38 @@ fn run_builtin(command: Commands, pwd: PathBuf) -> Result<()> {
                 }
             }
 
-            config.set_command(&pwd, &name, &command)?;
-            write_config(&config)?;
+            let location = if local {
+                local_config.commands.insert(name.clone(), command.clone());
+                write_local_config(&pwd, &local_config)?;
+                pwd.join(LOCAL_CONFIG_FILE).display().to_string()
+            } else {
+                config.set_command(&pwd, &name, &command)?;
+                write_config(&config)?;
+                pwd.display().to_string()
+            };
 
             println!(
                 "Aliased \"{}\" to \"{}\" in {}",
                 name.blue(),
                 command.blue(),
-                pwd.display().to_string().dimmed()
+                location.dimmed()
             );
+
+            // Your own commands win over `.taco.json` commands in the same directory
+            if local
+                && config
+                    .projects
+                    .get(path_key(&pwd)?)
+                    .is_some_and(|project| project.contains_key(&name))
+            {
+                println!(
+                    "{}",
+                    format!(
+                        "Note: your own \"{name}\" command wins over this one in this directory. Run `taco rm {name}` to remove yours."
+                    )
+                    .dimmed()
+                );
+            }
 
             if builtin_names().contains(&name) {
                 println!(
@@ -616,10 +751,50 @@ fn run_builtin(command: Commands, pwd: PathBuf) -> Result<()> {
                 );
             }
         }
-        Commands::Edit { name } => {
+        Commands::Edit { name, local } => {
+            if local {
+                let mut local_config = read_local_config(&pwd)?.unwrap_or_default();
+
+                let Some(current_command) = local_config.commands.get(&name).cloned() else {
+                    println!(
+                        "{}\n",
+                        format!(
+                            "Command \"{name}\" is not defined in {}, cannot edit it.",
+                            pwd.join(LOCAL_CONFIG_FILE).display()
+                        )
+                        .red()
+                    );
+                    let suggestions =
+                        did_you_mean(&name, local_config.commands.keys().map(String::as_str));
+                    print_did_you_mean("taco edit --local ", &suggestions);
+                    return Ok(());
+                };
+
+                let Some(command) = edit_command(Some(&current_command)) else {
+                    println!("{}", "Aborted!".red());
+                    return Ok(());
+                };
+
+                if command == current_command {
+                    println!("{}", "No changes made, aborting.".dimmed());
+                    return Ok(());
+                }
+
+                local_config.commands.insert(name.clone(), command.clone());
+                write_local_config(&pwd, &local_config)?;
+
+                println!(
+                    "Aliased \"{}\" to \"{}\" in {}",
+                    name.blue(),
+                    command.blue(),
+                    pwd.join(LOCAL_CONFIG_FILE).display().to_string().dimmed()
+                );
+                return Ok(());
+            }
+
             let mut config = read_config()?;
 
-            let combined_project = config.resolve_project(&pwd);
+            let combined_project = config.resolve_project(&pwd, &read_local_projects(&pwd)?);
             let Some(current_command) = combined_project.get(&name) else {
                 println!(
                     "{}\n",
@@ -652,7 +827,7 @@ fn run_builtin(command: Commands, pwd: PathBuf) -> Result<()> {
         }
         Commands::Which { name } => {
             let config = read_config()?;
-            let groups = config.resolve_project_grouped(&pwd);
+            let groups = config.resolve_project_grouped(&pwd, &read_local_projects(&pwd)?);
 
             // Deepest definition first. The same project can be aliased at multiple levels, but
             // its commands are identical, so only the deepest occurrence matters.
@@ -761,7 +936,41 @@ fn run_builtin(command: Commands, pwd: PathBuf) -> Result<()> {
             }
             std::process::exit(1);
         }
-        Commands::Remove { name } => {
+        Commands::Remove { name, local } => {
+            if local {
+                let file_path = pwd.join(LOCAL_CONFIG_FILE);
+                let mut local_config = read_local_config(&pwd)?.unwrap_or_default();
+
+                if local_config.commands.remove(&name).is_some() {
+                    if local_config.commands.is_empty() {
+                        // Keep the repository tidy when the last command is removed
+                        fs::remove_file(&file_path)?;
+                        println!(
+                            "Removed alias \"{}\", and the now empty {}",
+                            name.blue(),
+                            file_path.display().to_string().dimmed()
+                        );
+                    } else {
+                        write_local_config(&pwd, &local_config)?;
+                        println!(
+                            "Removed alias \"{}\" from {}",
+                            name.blue(),
+                            file_path.display().to_string().dimmed()
+                        );
+                    }
+                    return Ok(());
+                }
+
+                println!(
+                    "Alias \"{}\" is not defined in {}.\n",
+                    name.blue(),
+                    file_path.display()
+                );
+                let names = local_config.commands.keys().map(String::as_str);
+                print_did_you_mean("taco rm --local ", &did_you_mean(&name, names));
+                std::process::exit(1);
+            }
+
             let mut config = read_config()?;
 
             if config.remove_command(&pwd, &name)? {
@@ -770,8 +979,8 @@ fn run_builtin(command: Commands, pwd: PathBuf) -> Result<()> {
                 return Ok(());
             }
 
-            // The command might be inherited from a parent project or an alias
-            let groups = config.resolve_project_grouped(&pwd);
+            // The command might be inherited from a parent project, an alias, or a `.taco.json`
+            let groups = config.resolve_project_grouped(&pwd, &read_local_projects(&pwd)?);
             if let Some(group) = groups
                 .iter()
                 .rev()
@@ -783,7 +992,9 @@ fn run_builtin(command: Commands, pwd: PathBuf) -> Result<()> {
                     pwd.display(),
                     format_group_source(group)
                 );
-                if group.source.starts_with('/') {
+                if group.local {
+                    println!("Edit {} to remove it there.", group.source.blue());
+                } else if group.source.starts_with('/') {
                     println!(
                         "Run {} to remove it there.",
                         format!("taco rm {} --pwd {}", name, group.source).blue()
@@ -810,20 +1021,29 @@ fn run_builtin(command: Commands, pwd: PathBuf) -> Result<()> {
         }
         Commands::Print { json } => {
             let config = read_config()?;
+            let local = read_local_projects(&pwd)?;
 
             if json {
-                let project = config.resolve_project(&pwd);
+                let project = config.resolve_project(&pwd, &local);
                 println!("{}", serde_json::to_string_pretty(&project)?);
             } else {
-                print_grouped_commands(&config.resolve_project_grouped(&pwd));
+                print_grouped_commands(&config.resolve_project_grouped(&pwd, &local));
             }
         }
-        Commands::Config => {
-            let file_path = config_file_location()?;
+        Commands::Config { local } => {
+            let file_path = if local {
+                pwd.join(LOCAL_CONFIG_FILE)
+            } else {
+                config_file_location()?
+            };
 
             // Make sure the file exists, so that the editor has something to open
             if !file_path.exists() {
-                write_config(&Config::default())?;
+                if local {
+                    write_local_config(&pwd, &LocalConfig::default())?;
+                } else {
+                    write_config(&Config::default())?;
+                }
             }
 
             let editor = std::env::var("VISUAL")
@@ -842,7 +1062,20 @@ fn run_builtin(command: Commands, pwd: PathBuf) -> Result<()> {
             // is being used to repair an already broken file.
             let snapshot = fs::read(&file_path)
                 .wrap_err_with(|| format!("Could not read config file: {}", file_path.display()))?;
-            let restorable = serde_json::from_slice::<Config>(&snapshot).is_ok();
+            let restorable = if local {
+                serde_json::from_slice::<LocalConfig>(&snapshot).is_ok()
+            } else {
+                serde_json::from_slice::<Config>(&snapshot).is_ok()
+            };
+
+            // Catches mistakes immediately instead of at the next taco invocation
+            let validate = || {
+                if local {
+                    read_local_config(&pwd).map(|_| ())
+                } else {
+                    read_config().map(|_| ())
+                }
+            };
 
             'edit: loop {
                 let status = Command::new(program)
@@ -858,8 +1091,7 @@ fn run_builtin(command: Commands, pwd: PathBuf) -> Result<()> {
                     return Err(eyre!("Editor exited with a non-zero status"));
                 }
 
-                // Catch mistakes immediately instead of at the next taco invocation
-                let Err(e) = read_config() else { break };
+                let Err(e) = validate() else { break };
                 println!("{}", format!("{e:#}").red());
 
                 loop {
@@ -882,7 +1114,7 @@ fn run_builtin(command: Commands, pwd: PathBuf) -> Result<()> {
                     match answer.trim().to_ascii_lowercase().as_str() {
                         "" | "e" | "edit" => continue 'edit,
                         "r" | "restore" if restorable => {
-                            write_config_raw(&snapshot)?;
+                            write_raw(&file_path, &snapshot)?;
                             println!("Restored the previous config");
                             break 'edit;
                         }
@@ -1048,7 +1280,9 @@ fn run_builtin(command: Commands, pwd: PathBuf) -> Result<()> {
         Commands::Complete { kind } => {
             let config = read_config()?;
             match kind {
-                CompleteKind::Commands => print_completion_pairs(&config.resolve_project(&pwd)),
+                CompleteKind::Commands => print_completion_pairs(
+                    &config.resolve_project(&pwd, &read_local_projects(&pwd)?),
+                ),
                 CompleteKind::LocalCommands => {
                     if let Some(project) = config.projects.get(path_key(&pwd)?) {
                         print_completion_pairs(project);
@@ -1359,11 +1593,13 @@ fn read_config() -> Result<Config> {
 }
 
 fn write_config(config: &Config) -> Result<()> {
-    write_config_raw(serde_json::to_string_pretty(config)?.as_bytes())
+    write_raw(
+        &config_file_location()?,
+        serde_json::to_string_pretty(config)?.as_bytes(),
+    )
 }
 
-fn write_config_raw(contents: &[u8]) -> Result<()> {
-    let file_path = config_file_location()?;
+fn write_raw(file_path: &Path, contents: &[u8]) -> Result<()> {
     if let Some(parent) = file_path.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -1371,7 +1607,7 @@ fn write_config_raw(contents: &[u8]) -> Result<()> {
     // Write to a temporary file first so a crash mid-write can't corrupt the config.
     let tmp_path = file_path.with_extension("json.tmp");
     fs::write(&tmp_path, contents)?;
-    fs::rename(&tmp_path, &file_path)?;
+    fs::rename(&tmp_path, file_path)?;
 
     Ok(())
 }
@@ -1379,8 +1615,8 @@ fn write_config_raw(contents: &[u8]) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{
-        Config, build_shell_command, clean_edited_command, did_you_mean, edit_distance,
-        scan_arguments,
+        Config, LocalProjects, Project, build_shell_command, clean_edited_command, did_you_mean,
+        edit_distance, scan_arguments,
     };
     use std::path::Path;
 
@@ -1433,8 +1669,58 @@ mod tests {
             .set_command(Path::new("/projects/app"), "test", "vitest")
             .unwrap();
 
-        let resolved = config.resolve_project(Path::new("/projects/app/src"));
+        let resolved =
+            config.resolve_project(Path::new("/projects/app/src"), &LocalProjects::new());
         assert_eq!(resolved.get("test").map(String::as_str), Some("vitest"));
+    }
+
+    #[test]
+    fn personal_commands_win_over_local_commands_in_the_same_directory() {
+        let mut config = Config::default();
+        config
+            .set_command(Path::new("/projects/app"), "test", "vitest")
+            .unwrap();
+
+        let local = LocalProjects::from([(
+            "/projects/app".to_owned(),
+            Project::from([
+                ("test".to_owned(), "jest".to_owned()),
+                ("build".to_owned(), "make".to_owned()),
+            ]),
+        )]);
+
+        let resolved = config.resolve_project(Path::new("/projects/app"), &local);
+        assert_eq!(resolved.get("test").map(String::as_str), Some("vitest"));
+        assert_eq!(resolved.get("build").map(String::as_str), Some("make"));
+    }
+
+    #[test]
+    fn deeper_local_commands_win_over_personal_commands_of_a_parent() {
+        let mut config = Config::default();
+        config
+            .set_command(Path::new("/projects"), "test", "jest")
+            .unwrap();
+
+        let local = LocalProjects::from([(
+            "/projects/app".to_owned(),
+            Project::from([("test".to_owned(), "vitest".to_owned())]),
+        )]);
+
+        let resolved = config.resolve_project(Path::new("/projects/app"), &local);
+        assert_eq!(resolved.get("test").map(String::as_str), Some("vitest"));
+    }
+
+    #[test]
+    fn local_commands_are_grouped_under_their_file() {
+        let local = LocalProjects::from([(
+            "/projects/app".to_owned(),
+            Project::from([("test".to_owned(), "vitest".to_owned())]),
+        )]);
+
+        let groups = Config::default().resolve_project_grouped(Path::new("/projects/app"), &local);
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].source, "/projects/app/.taco.json");
+        assert!(groups[0].local);
     }
 
     #[test]
@@ -1447,7 +1733,8 @@ mod tests {
             .set_command(Path::new("/projects/app"), "test", "vitest")
             .unwrap();
 
-        let groups = config.resolve_project_grouped(Path::new("/projects/app"));
+        let groups =
+            config.resolve_project_grouped(Path::new("/projects/app"), &LocalProjects::new());
         let sources: Vec<_> = groups.iter().map(|group| group.source.as_str()).collect();
         assert_eq!(sources, vec!["/projects", "/projects/app"]);
     }
@@ -1462,7 +1749,8 @@ mod tests {
             .add_alias(Path::new("/projects/app"), "vitest")
             .unwrap();
 
-        let groups = config.resolve_project_grouped(Path::new("/projects/app"));
+        let groups =
+            config.resolve_project_grouped(Path::new("/projects/app"), &LocalProjects::new());
         assert_eq!(groups.len(), 1);
         assert_eq!(groups[0].source, "vitest");
         assert_eq!(groups[0].via.as_deref(), Some("/projects/app"));
@@ -1674,7 +1962,7 @@ mod tests {
             .add_alias(Path::new("/projects/app"), "/presets/webdev")
             .unwrap();
 
-        let resolved = config.resolve_project(Path::new("/projects/app"));
+        let resolved = config.resolve_project(Path::new("/projects/app"), &LocalProjects::new());
         assert_eq!(resolved.get("dev").map(String::as_str), Some("npm run dev"));
     }
 }

@@ -20,11 +20,17 @@ _taco() {
     taco)
       COMPREPLY=($(compgen -W "add edit which alias unalias rm print config doctor completions" -- "$cur"))
       ;;
-    edit|which)
+    add)
+      COMPREPLY=($(compgen -W "--local" -- "$cur"))
+      ;;
+    edit)
+      COMPREPLY=($(compgen -W "$(_taco_dynamic commands) --local" -- "$cur"))
+      ;;
+    which)
       COMPREPLY=($(compgen -W "$(_taco_dynamic commands)" -- "$cur"))
       ;;
     rm)
-      COMPREPLY=($(compgen -W "$(_taco_dynamic local-commands)" -- "$cur"))
+      COMPREPLY=($(compgen -W "$(_taco_dynamic local-commands) --local" -- "$cur"))
       ;;
     alias)
       COMPREPLY=($(compgen -W "$(_taco_dynamic projects)" -- "$cur"))
@@ -37,6 +43,9 @@ _taco() {
       ;;
     print)
       COMPREPLY=($(compgen -W "--json" -- "$cur"))
+      ;;
+    config)
+      COMPREPLY=($(compgen -W "--local" -- "$cur"))
       ;;
     doctor)
       COMPREPLY=($(compgen -W "--fix" -- "$cur"))

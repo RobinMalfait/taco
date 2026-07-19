@@ -1,0 +1,8 @@
+---
+source: tests/cli.rs
+expression: "sandbox.taco(&[\"rm\", \"--local\", \"build\"])"
+snapshot_kind: text
+---
+exit code: 1
+----- stdout -----
+Alias "build" is not defined in <root>/project/.taco.json.

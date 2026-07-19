@@ -1,0 +1,14 @@
+---
+source: tests/cli.rs
+expression: "sandbox.taco(&[\"print\"])"
+snapshot_kind: text
+---
+exit code: 0
+----- stdout -----
+Available commands:
+
+<root>/project/.taco.json
+  └─ taco build
+     echo local-build
+
+1 command

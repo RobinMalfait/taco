@@ -1,0 +1,8 @@
+---
+source: tests/cli.rs
+expression: "sandbox.taco(&[\"rm\", \"--local\", \"build\"])"
+snapshot_kind: text
+---
+exit code: 0
+----- stdout -----
+Removed alias "build" from <root>/project/.taco.json

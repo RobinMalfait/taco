@@ -1,0 +1,6 @@
+---
+source: tests/cli.rs
+expression: "sandbox.taco_with_editor(&noop, &[\"config\", \"--local\"], \"\")"
+snapshot_kind: text
+---
+exit code: 0

@@ -1,0 +1,10 @@
+---
+source: tests/cli.rs
+expression: "sandbox.taco_with_editor(&editor, &[\"edit\", \"--local\", \"biuld\"], \"\")"
+snapshot_kind: text
+---
+exit code: 0
+----- stdout -----
+Command "biuld" is not defined in <root>/project/.taco.json, cannot edit it.
+
+Did you mean taco edit --local build?

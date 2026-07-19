@@ -1,0 +1,8 @@
+---
+source: tests/cli.rs
+expression: "sandbox.taco_with_editor(&editor, &[\"edit\", \"--local\", \"build\"], \"\")"
+snapshot_kind: text
+---
+exit code: 0
+----- stdout -----
+Aliased "build" to "echo edited-build" in <root>/project/.taco.json

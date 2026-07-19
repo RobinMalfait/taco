@@ -1,0 +1,8 @@
+---
+source: tests/cli.rs
+expression: "sandbox.taco(&[\"rm\", \"--local\", \"test\"])"
+snapshot_kind: text
+---
+exit code: 0
+----- stdout -----
+Removed alias "test", and the now empty <root>/project/.taco.json

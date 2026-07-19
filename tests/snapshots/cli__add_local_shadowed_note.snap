@@ -1,0 +1,9 @@
+---
+source: tests/cli.rs
+expression: "sandbox.taco(&[\"add\", \"--local\", \"build\", \"--\", \"echo\", \"local-build\"])"
+snapshot_kind: text
+---
+exit code: 0
+----- stdout -----
+Aliased "build" to "echo local-build" in <root>/project/.taco.json
+Note: your own "build" command wins over this one in this directory. Run `taco rm build` to remove yours.
