@@ -7,9 +7,12 @@ members = ["cargo:."]
 cargo-dist-version = "0.32.0"
 # CI backends to support
 ci = "github"
-# The installers to generate for each app. The Homebrew formula is attached to the GitHub
-# release as an artifact; the homebrew-tap repo pulls it from there itself, so no cross-repo
-# credentials are needed anywhere.
+# The installers to generate for each app
 installers = ["homebrew"]
+# The GitHub repo holding the Homebrew formula. Intentionally WITHOUT the homebrew publish
+# job (`dist init` warns about this): the formula is attached to the GitHub release, and the
+# tap pulls it from there itself, so no cross-repo credentials are needed anywhere. The tap
+# is declared so the release announcement points at it.
+tap = "RobinMalfait/homebrew-tap"
 # Target platforms to build apps for (Rust target-triple syntax)
 targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu"]
