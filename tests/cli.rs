@@ -395,6 +395,12 @@ fn rm_points_at_the_local_file() {
     sandbox.write_local_config(r#"{"commands": {"build": "echo local-build"}}"#);
 
     assert_snapshot!("rm_local_file_hint", sandbox.taco(&["rm", "build"]));
+
+    // From a subdirectory the hint includes the directory holding the `.taco.json`
+    assert_snapshot!(
+        "rm_local_file_hint_nested",
+        sandbox.taco_in(&sandbox.nested(), &["rm", "build"])
+    );
 }
 
 #[test]

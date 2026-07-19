@@ -1,0 +1,9 @@
+---
+source: tests/cli.rs
+expression: "sandbox.taco_in(&sandbox.nested(), &[\"rm\", \"build\"])"
+snapshot_kind: text
+---
+exit code: 1
+----- stdout -----
+Alias "build" is not defined in <root>/project/nested, but in <root>/project/.taco.json.
+Run taco rm build --local --pwd <root>/project to remove it there.

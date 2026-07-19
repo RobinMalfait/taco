@@ -6,4 +6,4 @@ snapshot_kind: text
 exit code: 1
 ----- stdout -----
 Alias "build" is not defined in <root>/project, but in <root>/project/.taco.json.
-Edit <root>/project/.taco.json to remove it there.
+Run taco rm build --local to remove it there.

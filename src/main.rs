@@ -1052,7 +1052,15 @@ fn run_builtin(command: Commands, pwd: PathBuf) -> Result<()> {
                     format_group_source(group)
                 );
                 if group.local {
-                    println!("Edit {} to remove it there.", group.source.blue());
+                    let pwd_flag = if group.directory == path_key(&pwd)? {
+                        String::new()
+                    } else {
+                        format!(" --pwd {}", group.directory)
+                    };
+                    println!(
+                        "Run {} to remove it there.",
+                        format!("taco rm {name} --local{pwd_flag}").blue()
+                    );
                 } else if group.source.starts_with('/') {
                     println!(
                         "Run {} to remove it there.",
