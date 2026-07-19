@@ -84,9 +84,9 @@ Everything above lives in your personal config, but commands can also be committ
 
 Everyone on the team gets these commands right after cloning. They follow the same inheritance rules as your own commands: they are visible in subdirectories, and deeper directories win over parents. Within the same directory your personal commands and aliases win over the repo-local ones, so `taco add` always lets you override a shared command for yourself.
 
-`taco print` and `taco which` show these commands with the `.taco.json` file they come from. You don't have to write the file by hand either: `taco add --local`, `taco edit --local` and `taco rm --local` manage the `.taco.json` of the current directory (removing the last command also removes the file), and `taco config --local` opens it in your editor. Without `--local`, those commands only ever touch your personal config.
+`taco ls` and `taco which` show these commands with the `.taco.json` file they come from. You don't have to write the file by hand either: `taco add --local`, `taco edit --local` and `taco rm --local` manage the `.taco.json` of the current directory (removing the last command also removes the file), and `taco config --local` opens it in your editor. Without `--local`, those commands only ever touch your personal config.
 
-Note: as with a `Makefile` or npm scripts, running a command from a freshly cloned repository executes whatever the author put there — taco never runs anything you didn't explicitly invoke, but do glance at `taco print` in repositories you don't trust yet.
+Note: as with a `Makefile` or npm scripts, running a command from a freshly cloned repository executes whatever the author put there — taco never runs anything you didn't explicitly invoke, but do glance at `taco ls` in repositories you don't trust yet.
 
 #### Which command wins
 
@@ -134,7 +134,7 @@ taco config        # your command
 taco taco config   # the builtin
 ```
 
-`taco` itself is the only reserved name (`taco add taco` refuses), which means `taco taco {subcommand}` unambiguously refers to the builtin — use that form in scripts. Shadowing a builtin is perfectly fine, but taco makes it visible: `taco add` prints a note when you create one, `taco print` tags them, and `taco doctor` lists them.
+`taco` itself is the only reserved name (`taco add taco` refuses), which means `taco taco {subcommand}` unambiguously refers to the builtin — use that form in scripts. Shadowing a builtin is perfectly fine, but taco makes it visible: `taco add` prints a note when you create one, `taco ls` tags them, and `taco doctor` lists them.
 
 ---
 
@@ -174,7 +174,7 @@ PATH=/path-to-taco-project/target/release:$PATH
 #### Add – `taco add {name}`
 
 ```sh
-taco add ls
+taco add la
 ```
 
 This will open your default editor (`$VISUAL`, falling back to `$EDITOR`) to input the command. Lines with `#` at the start will be ignored, and commands can span multiple lines.
@@ -184,8 +184,8 @@ If the alias already exists, you will be asked to confirm before it is overwritt
 #### Add – `taco add {name} -- {command}`
 
 ```sh
-taco add ls -- ls -lah
-# Aliased "ls" to "ls -lah" in /Users/robin
+taco add la -- ls -lah
+# Aliased "la" to "ls -lah" in /Users/robin
 ```
 
 Performs the same action as above, but without opening an editor. This is useful
@@ -196,7 +196,7 @@ Both forms accept `--local` to store the command in the `.taco.json` of the curr
 #### Edit – `taco edit {name}`
 
 ```sh
-taco edit ls
+taco edit la
 ```
 
 This will open your default editor (`$VISUAL`, falling back to `$EDITOR`) to edit the command. The current command will be pre-filled. Lines with `#` at the start will be ignored.
@@ -206,7 +206,7 @@ With `--local`, this edits the command in the `.taco.json` of the current direct
 #### Execute – `taco {name} -- {passthrough arguments}`
 
 ```sh
-taco ls
+taco la
 # total 680
 # total 680
 # drwxr-x---+ 59 robin  staff   1.8K Dec  1 21:06 .
@@ -226,7 +226,7 @@ taco test -- --watch
 Or if you want to look at the command that is going to be executed use the `--print` (or `-p`) flag.
 
 ```sh
-taco ls --print
+taco la --print
 # ls -lah
 ```
 
@@ -310,12 +310,14 @@ taco unalias vitest
 
 If the alias is attached to a parent directory instead, taco tells you where it is attached and how to remove it there.
 
-#### Print – `taco print`
+#### List – `taco ls`
+
+(`taco print` is kept as a legacy alias.)
 
 A flat list of every command available in the current directory, after resolution — what you see is what runs:
 
 ```sh
-taco print
+taco ls
 # Available commands:
 #
 # taco build  cargo build --release
@@ -330,7 +332,7 @@ Long commands wrap to the width of your terminal, aligned inside the command col
 Add `--verbose` (or `-v`) to see where every command comes from: a tree that mirrors the resolution order (see [Which command wins](#which-command-wins)), the current project first, with every parent directory, alias and `.taco.json` nested one level deeper. The first definition of a command is the one that runs; definitions further down that lost are greyed out and tagged as `(shadowed)`.
 
 ```sh
-taco print --verbose
+taco ls --verbose
 # Available commands:
 #
 # /Users/robin/github.com/RobinMalfait/taco
@@ -351,9 +353,9 @@ taco print --verbose
 Or..
 
 ```sh
-taco print --json
+taco ls --json
 # {
-#   "ls": "ls -lah",
+#   "la": "ls -lah",
 #   "test": "./node_modules/.bin/vitest"
 # }
 ```
@@ -361,8 +363,8 @@ taco print --json
 #### Remove – `taco rm {name}`
 
 ```sh
-taco rm ls
-# Removed alias "ls"
+taco rm la
+# Removed alias "la"
 ```
 
 `taco rm` only removes commands defined in the current directory itself. If the command is inherited from a parent directory or an alias, taco tells you where it is defined and how to remove it there.
@@ -440,7 +442,7 @@ taco completions fish > ~/.config/fish/completions/taco.fish
 Every command accepts a `--pwd {path}` flag to act as if taco was run from that directory, instead of the current working directory.
 
 ```sh
-taco print --pwd ~/projects/php_project_a
+taco ls --pwd ~/projects/php_project_a
 ```
 
 ---

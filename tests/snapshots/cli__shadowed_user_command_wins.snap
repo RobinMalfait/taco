@@ -1,7 +1,8 @@
 ---
 source: tests/cli.rs
-expression: "sandbox.taco(&[\"print\"])"
+expression: "sandbox.taco(&[\"ls\"])"
+snapshot_kind: text
 ---
 exit code: 0
 ----- stdout -----
-MY-PRINT
+MY-LS

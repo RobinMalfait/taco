@@ -12,13 +12,13 @@ _taco() {
   first="${COMP_WORDS[1]}"
 
   if [[ $COMP_CWORD -eq 1 ]]; then
-    COMPREPLY=($(compgen -W "add edit which alias unalias rm print config doctor completions taco $(_taco_dynamic commands)" -- "$cur"))
+    COMPREPLY=($(compgen -W "add edit which alias unalias rm ls config doctor completions taco $(_taco_dynamic commands)" -- "$cur"))
     return
   fi
 
   case "$first" in
     taco)
-      COMPREPLY=($(compgen -W "add edit which alias unalias rm print config doctor completions" -- "$cur"))
+      COMPREPLY=($(compgen -W "add edit which alias unalias rm ls config doctor completions" -- "$cur"))
       ;;
     add)
       COMPREPLY=($(compgen -W "--local" -- "$cur"))
@@ -41,7 +41,7 @@ _taco() {
     completions)
       COMPREPLY=($(compgen -W "zsh bash fish" -- "$cur"))
       ;;
-    print)
+    ls|print)
       COMPREPLY=($(compgen -W "--json --verbose" -- "$cur"))
       ;;
     config)

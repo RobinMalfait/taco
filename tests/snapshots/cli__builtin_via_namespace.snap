@@ -1,12 +1,12 @@
 ---
 source: tests/cli.rs
-expression: "sandbox.taco(&[\"taco\", \"print\"])"
+expression: "sandbox.taco(&[\"taco\", \"ls\"])"
 snapshot_kind: text
 ---
 exit code: 0
 ----- stdout -----
 Available commands:
 
-taco print  echo MY-PRINT (shadows the builtin)
+taco ls  echo MY-LS (shadows the builtin)
 
 1 command

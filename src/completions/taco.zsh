@@ -23,7 +23,7 @@ _taco() {
     'alias:Alias the current project to a predefined project'
     'unalias:Remove an alias from the current project'
     'rm:Remove an existing command'
-    'print:Print all the commands'
+    'ls:List all the commands'
     'config:Open the config file in your editor'
     'doctor:Check the config for stale projects and dead aliases'
     'completions:Generate a shell completion script'
@@ -74,7 +74,7 @@ _taco() {
           _taco_items aliases
           (( ${#reply} )) && _describe -t aliases 'alias' reply
           ;;
-        print)
+        ls|print)
           _arguments \
             '(-j --json)'{-j,--json}'[Print commands in JSON format]' \
             '(-v --verbose)'{-v,--verbose}'[Show where every command comes from]'

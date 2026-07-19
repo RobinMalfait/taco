@@ -239,14 +239,14 @@ fn user_commands_win_over_builtins() {
     // Shadowing a builtin prints a note
     assert_snapshot!(
         "shadowing_add_note",
-        sandbox.taco(&["add", "print", "--", "echo", "MY-PRINT"])
+        sandbox.taco(&["add", "ls", "--", "echo", "MY-LS"])
     );
 
     // The user command wins
-    assert_snapshot!("shadowed_user_command_wins", sandbox.taco(&["print"]));
+    assert_snapshot!("shadowed_user_command_wins", sandbox.taco(&["ls"]));
 
     // The builtin stays reachable through the `taco` namespace
-    assert_snapshot!("builtin_via_namespace", sandbox.taco(&["taco", "print"]));
+    assert_snapshot!("builtin_via_namespace", sandbox.taco(&["taco", "ls"]));
 }
 
 #[test]
@@ -376,7 +376,7 @@ fn local_taco_json_commands_are_available() {
         "local_command_inherited",
         sandbox.taco_in(&sandbox.nested(), &["build"])
     );
-    assert_snapshot!("local_command_print", sandbox.taco(&["print"]));
+    assert_snapshot!("local_command_print", sandbox.taco(&["ls"]));
 }
 
 #[test]
@@ -597,7 +597,7 @@ fn a_flat_taco_json_is_rejected() {
     sandbox.write_local_config(r#"{"build": "echo local-build"}"#);
 
     // Not snapshotted: the eyre report includes source locations that would make it brittle
-    let output = sandbox.taco(&["print"]);
+    let output = sandbox.taco(&["ls"]);
     assert!(output.contains("exit code: 1"), "{output}");
     assert!(
         output.contains("Invalid config file: <root>/project/.taco.json"),
@@ -620,12 +620,12 @@ fn print_shows_the_resolution_order_as_a_tree() {
     );
 
     // The default is a flat list of the commands that actually run
-    assert_snapshot!("print_flat", sandbox.taco_in(&sandbox.nested(), &["print"]));
+    assert_snapshot!("print_flat", sandbox.taco_in(&sandbox.nested(), &["ls"]));
 
     // The verbose variant shows every source and the definitions that lost
     assert_snapshot!(
         "print_tree",
-        sandbox.taco_in(&sandbox.nested(), &["print", "--verbose"])
+        sandbox.taco_in(&sandbox.nested(), &["ls", "--verbose"])
     );
 }
 
@@ -646,14 +646,22 @@ fn print_wraps_to_the_terminal_width() {
         "prettier --cache --ignore-unknown --write .",
     ]);
 
-    assert_snapshot!("print_wrapped", sandbox.taco_with_columns("40", &["print"]));
+    assert_snapshot!("print_wrapped", sandbox.taco_with_columns("40", &["ls"]));
 
     // Without a terminal (piped output, like here), nothing wraps
-    assert_snapshot!("print_unwrapped", sandbox.taco(&["print"]));
+    assert_snapshot!("print_unwrapped", sandbox.taco(&["ls"]));
 
     // The verbose tree wraps too, inside each group's indentation
     assert_snapshot!(
         "print_tree_wrapped",
-        sandbox.taco_with_columns("40", &["print", "--verbose"])
+        sandbox.taco_with_columns("40", &["ls", "--verbose"])
     );
+}
+
+#[test]
+fn print_is_a_legacy_alias_for_ls() {
+    let sandbox = Sandbox::new();
+    sandbox.taco(&["add", "greet", "--", "echo", "hello"]);
+
+    assert_eq!(sandbox.taco(&["ls"]), sandbox.taco(&["print"]));
 }

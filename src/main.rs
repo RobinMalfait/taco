@@ -204,8 +204,9 @@ enum Commands {
         local: bool,
     },
 
-    /// Print all the commands
-    Print {
+    /// List all the commands
+    #[clap(name = "ls", alias = "print")]
+    Ls {
         /// Print commands in JSON format
         #[clap(short, long)]
         json: bool,
@@ -1023,7 +1024,7 @@ fn run_builtin(command: Commands, pwd: PathBuf) -> Result<()> {
             }
             std::process::exit(1);
         }
-        Commands::Print { json, verbose } => {
+        Commands::Ls { json, verbose } => {
             let config = read_config()?;
             let local = read_local_projects(&pwd)?;
 

@@ -18,19 +18,19 @@ complete -c taco -n __taco_needs_command -f -a which -d 'Show where a command is
 complete -c taco -n __taco_needs_command -f -a alias -d 'Alias the current project to a predefined project'
 complete -c taco -n __taco_needs_command -f -a unalias -d 'Remove an alias from the current project'
 complete -c taco -n __taco_needs_command -f -a rm -d 'Remove an existing command'
-complete -c taco -n __taco_needs_command -f -a print -d 'Print all the commands'
+complete -c taco -n __taco_needs_command -f -a ls -d 'List all the commands'
 complete -c taco -n __taco_needs_command -f -a config -d 'Open the config file in your editor'
 complete -c taco -n __taco_needs_command -f -a doctor -d 'Check the config for stale projects and dead aliases'
 complete -c taco -n __taco_needs_command -f -a completions -d 'Generate a shell completion script'
 complete -c taco -n __taco_needs_command -f -a taco -d 'Run a builtin subcommand'
-complete -c taco -n '__taco_using_command taco' -f -a 'add edit which alias unalias rm print config doctor completions'
+complete -c taco -n '__taco_using_command taco' -f -a 'add edit which alias unalias rm ls config doctor completions'
 complete -c taco -n '__taco_using_command edit which' -f -a "(command taco __complete commands 2>/dev/null)"
 complete -c taco -n '__taco_using_command rm' -f -a "(command taco __complete local-commands 2>/dev/null)"
 complete -c taco -n '__taco_using_command alias' -f -a "(command taco __complete projects 2>/dev/null)"
 complete -c taco -n '__taco_using_command unalias' -f -a "(command taco __complete aliases 2>/dev/null)"
 complete -c taco -n '__taco_using_command completions' -f -a 'zsh bash fish'
-complete -c taco -n '__taco_using_command print' -f -s j -l json -d 'Print commands in JSON format'
-complete -c taco -n '__taco_using_command print' -f -s v -l verbose -d 'Show where every command comes from'
+complete -c taco -n '__taco_using_command ls print' -f -s j -l json -d 'Print commands in JSON format'
+complete -c taco -n '__taco_using_command ls print' -f -s v -l verbose -d 'Show where every command comes from'
 complete -c taco -n '__taco_using_command doctor' -f -l fix -d 'Remove the reported issues from the config'
 complete -c taco -n '__taco_using_command add' -l local -d 'Store the command in the .taco.json of the current directory'
 complete -c taco -n '__taco_using_command edit' -l local -d 'Edit the command in the .taco.json of the current directory'
