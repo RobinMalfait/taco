@@ -1,0 +1,10 @@
+---
+source: tests/cli.rs
+expression: "sandbox.taco_config(&breaker, \"k\\n\")"
+snapshot_kind: text
+---
+exit code: 1
+----- stdout -----
+Invalid config file: <root>/taco.json: key must be a string at line 1 column 2
+
+What now? (e)dit again / (r)estore previous config / (k)eep it broken

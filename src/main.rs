@@ -835,24 +835,61 @@ fn run_builtin(command: Commands, pwd: PathBuf) -> Result<()> {
             let program = parts
                 .next()
                 .ok_or_else(|| eyre!("No editor configured, set $VISUAL or $EDITOR"))?;
+            let editor_args = parts.collect::<Vec<_>>();
 
-            let status = Command::new(program)
-                .args(parts)
-                .arg(&file_path)
-                .stdin(Stdio::inherit())
-                .stdout(Stdio::inherit())
-                .stderr(Stdio::inherit())
-                .status()
-                .wrap_err_with(|| format!("Failed to open editor: {editor}"))?;
+            // Snapshot the pre-edit contents, so a broken edit can be rolled back. Restoring is
+            // only worth offering when the snapshot itself is valid, e.g. not when `taco config`
+            // is being used to repair an already broken file.
+            let snapshot = fs::read(&file_path)
+                .wrap_err_with(|| format!("Could not read config file: {}", file_path.display()))?;
+            let restorable = serde_json::from_slice::<Config>(&snapshot).is_ok();
 
-            if !status.success() {
-                return Err(eyre!("Editor exited with a non-zero status"));
-            }
+            'edit: loop {
+                let status = Command::new(program)
+                    .args(&editor_args)
+                    .arg(&file_path)
+                    .stdin(Stdio::inherit())
+                    .stdout(Stdio::inherit())
+                    .stderr(Stdio::inherit())
+                    .status()
+                    .wrap_err_with(|| format!("Failed to open editor: {editor}"))?;
 
-            // Catch mistakes immediately instead of at the next taco invocation
-            if let Err(e) = read_config() {
+                if !status.success() {
+                    return Err(eyre!("Editor exited with a non-zero status"));
+                }
+
+                // Catch mistakes immediately instead of at the next taco invocation
+                let Err(e) = read_config() else { break };
                 println!("{}", format!("{e:#}").red());
-                std::process::exit(1);
+
+                loop {
+                    let choices = if restorable {
+                        "(e)dit again / (r)estore previous config / (k)eep it broken"
+                    } else {
+                        "(e)dit again / (k)eep it broken"
+                    };
+                    print!("\nWhat now? {} ", choices.dimmed());
+                    let _ = std::io::stdout().flush();
+
+                    let mut answer = String::new();
+                    // EOF, e.g. when stdin is not interactive: the config is still broken, so
+                    // all that's left is reporting the failure
+                    if std::io::stdin().read_line(&mut answer).unwrap_or(0) == 0 {
+                        println!();
+                        std::process::exit(1);
+                    }
+
+                    match answer.trim().to_ascii_lowercase().as_str() {
+                        "" | "e" | "edit" => continue 'edit,
+                        "r" | "restore" if restorable => {
+                            write_config_raw(&snapshot)?;
+                            println!("Restored the previous config");
+                            break 'edit;
+                        }
+                        "k" | "keep" => std::process::exit(1),
+                        _ => {}
+                    }
+                }
             }
         }
         Commands::Doctor { fix } => {
@@ -1322,6 +1359,10 @@ fn read_config() -> Result<Config> {
 }
 
 fn write_config(config: &Config) -> Result<()> {
+    write_config_raw(serde_json::to_string_pretty(config)?.as_bytes())
+}
+
+fn write_config_raw(contents: &[u8]) -> Result<()> {
     let file_path = config_file_location()?;
     if let Some(parent) = file_path.parent() {
         fs::create_dir_all(parent)?;
@@ -1329,7 +1370,7 @@ fn write_config(config: &Config) -> Result<()> {
 
     // Write to a temporary file first so a crash mid-write can't corrupt the config.
     let tmp_path = file_path.with_extension("json.tmp");
-    fs::write(&tmp_path, serde_json::to_string_pretty(config)?)?;
+    fs::write(&tmp_path, contents)?;
     fs::rename(&tmp_path, &file_path)?;
 
     Ok(())

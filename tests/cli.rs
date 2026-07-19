@@ -1,5 +1,6 @@
 use std::fs;
 use std::io::Write;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
@@ -57,8 +58,29 @@ impl Sandbox {
     /// Run taco with the given stdin (for `(y/N)` confirmation prompts) and render the result for
     /// snapshotting.
     fn taco_stdin(&self, dir: &Path, arguments: &[&str], stdin: &str) -> String {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_taco"))
-            .args(arguments)
+        let mut command = self.taco_command(dir);
+        command.args(arguments);
+        self.spawn(command, stdin)
+    }
+
+    /// Run `taco config` with the given editor script, answering the recovery prompt via stdin.
+    fn taco_config(&self, editor: &Path, stdin: &str) -> String {
+        let mut command = self.taco_command(&self.project);
+        command.arg("config").env("EDITOR", editor);
+        self.spawn(command, stdin)
+    }
+
+    /// Write an executable script that can act as `$EDITOR`, receiving the config file as `$1`.
+    fn editor(&self, name: &str, body: &str) -> PathBuf {
+        let path = self.base.join(name);
+        fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+        path
+    }
+
+    fn taco_command(&self, dir: &Path) -> Command {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_taco"));
+        command
             .current_dir(dir)
             .env("TACO_CONFIG", &self.config)
             .env("SHELL", "/bin/sh")
@@ -67,10 +89,12 @@ impl Sandbox {
             .env_remove("EDITOR")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .unwrap();
+            .stderr(Stdio::piped());
+        command
+    }
 
+    fn spawn(&self, mut command: Command, stdin: &str) -> String {
+        let mut child = command.spawn().unwrap();
         child
             .stdin
             .as_mut()
@@ -322,4 +346,73 @@ fn the_config_location_can_be_overridden() {
     sandbox.taco(&["add", "greet", "--", "echo", "hello"]);
 
     assert_snapshot!("config_file_contents", sandbox.config_contents());
+}
+
+#[test]
+fn a_broken_config_edit_can_be_restored() {
+    let sandbox = Sandbox::new();
+    sandbox.taco(&["add", "greet", "--", "echo", "hello"]);
+    let valid = sandbox.config_contents();
+
+    let breaker = sandbox.editor("break-config", r#"echo '{broken' > "$1""#);
+
+    assert_snapshot!("config_restore", sandbox.taco_config(&breaker, "r\n"));
+    assert_eq!(sandbox.config_contents(), valid);
+}
+
+#[test]
+fn a_broken_config_edit_can_be_edited_again() {
+    let sandbox = Sandbox::new();
+    sandbox.taco(&["add", "greet", "--", "echo", "hello"]);
+    let valid = sandbox.config_contents();
+
+    // Breaks the config on the first run, undoes the damage on the second
+    let marker = sandbox.base.join("second-run");
+    let fixer = sandbox.editor(
+        "fix-config-on-retry",
+        &format!(
+            r#"if [ -f "{marker}" ]; then cp "{marker}" "$1"; else cp "$1" "{marker}"; echo '{{broken' > "$1"; fi"#,
+            marker = marker.display()
+        ),
+    );
+
+    assert_snapshot!("config_edit_again", sandbox.taco_config(&fixer, "e\n"));
+    assert_eq!(sandbox.config_contents(), valid);
+}
+
+#[test]
+fn a_broken_config_edit_can_be_kept() {
+    let sandbox = Sandbox::new();
+    sandbox.taco(&["add", "greet", "--", "echo", "hello"]);
+
+    let breaker = sandbox.editor("break-config", r#"echo '{broken' > "$1""#);
+
+    assert_snapshot!("config_keep_broken", sandbox.taco_config(&breaker, "k\n"));
+    assert_snapshot!("config_broken_contents", sandbox.config_contents());
+}
+
+#[test]
+fn an_unanswered_recovery_prompt_keeps_the_broken_config() {
+    let sandbox = Sandbox::new();
+    sandbox.taco(&["add", "greet", "--", "echo", "hello"]);
+
+    let breaker = sandbox.editor("break-config", r#"echo '{broken' > "$1""#);
+
+    // EOF on stdin, like non-interactive use, reports the failure and bails
+    assert_snapshot!("config_prompt_eof", sandbox.taco_config(&breaker, ""));
+    assert!(sandbox.config_contents().contains("{broken"));
+}
+
+#[test]
+fn restore_is_not_offered_when_the_config_was_already_broken() {
+    let sandbox = Sandbox::new();
+    sandbox.write_config("{already broken");
+
+    let breaker = sandbox.editor("break-config", r#"echo '{broken' > "$1""#);
+
+    // There is no valid config to restore, so `r` is not an option and falls through to EOF
+    assert_snapshot!(
+        "config_no_restore_option",
+        sandbox.taco_config(&breaker, "r\n")
+    );
 }
