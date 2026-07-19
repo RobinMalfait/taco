@@ -1480,6 +1480,30 @@ fn runnable_builtins() -> Vec<(String, String)> {
         .collect()
 }
 
+/// Enter the alternate screen: the picker draws there, so that leaving it again — no matter how —
+/// restores the terminal exactly as it was.
+const ENTER_ALTERNATE_SCREEN: &str = "\x1b[?1049h\x1b[H";
+
+/// Leave the alternate screen and show the cursor again (the picker hides it while open).
+const LEAVE_ALTERNATE_SCREEN: &str = "\x1b[?1049l\x1b[?25h";
+
+/// Clean up the picker's screen before dying on Ctrl-C: a SIGINT death skips the picker's own
+/// cleanup, which would leave its remains on screen and the terminal without a cursor.
+#[cfg(unix)]
+extern "C" fn close_picker_and_die(_: libc::c_int) {
+    // Only async-signal-safe calls are allowed here: a raw write of the escape sequences to
+    // stderr (where the picker draws), and an immediate exit.
+    unsafe {
+        libc::write(
+            2,
+            LEAVE_ALTERNATE_SCREEN.as_ptr().cast(),
+            LEAVE_ALTERNATE_SCREEN.len(),
+        );
+        // 130 = 128 + SIGINT, what a shell reports for an interrupted command
+        libc::_exit(130);
+    }
+}
+
 /// Let the user pick one of the resolved commands interactively, fuzzy-matching on both the name
 /// and the command itself. The builtin subcommands are listed below the user's commands, tagged
 /// `(builtin)` — typing "builtin" filters down to them. Returns `None` when dismissed.
@@ -1511,12 +1535,33 @@ fn pick_command(project: &Project) -> Result<Option<Picked<'_>>> {
         )
         .collect();
 
+    #[cfg(unix)]
+    unsafe {
+        libc::signal(
+            libc::SIGINT,
+            close_picker_and_die as *const () as libc::sighandler_t,
+        );
+    }
+
+    eprint!("{ENTER_ALTERNATE_SCREEN}");
+    let _ = std::io::stderr().flush();
+
     let selection = dialoguer::FuzzySelect::with_theme(&dialoguer::theme::ColorfulTheme::default())
         .with_prompt("Run a command")
         .items(&items)
         .default(0)
-        .interact_opt()
-        .wrap_err("Failed to show the interactive picker")?;
+        .interact_opt();
+
+    // Back to the default Ctrl-C behavior for whatever runs after the picker. Leave the
+    // alternate screen before handling any error, so the terminal is never left stuck in it.
+    #[cfg(unix)]
+    unsafe {
+        libc::signal(libc::SIGINT, libc::SIG_DFL);
+    }
+    eprint!("{LEAVE_ALTERNATE_SCREEN}");
+    let _ = std::io::stderr().flush();
+
+    let selection = selection.wrap_err("Failed to show the interactive picker")?;
 
     Ok(selection.map(|index| {
         if index < project.len() {

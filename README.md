@@ -245,7 +245,7 @@ The same suggestions apply to `taco edit`, `taco which`, `taco rm` and `taco una
 
 #### Pick – `taco`
 
-A bare `taco` in a terminal opens an interactive picker over the resolved commands: type to fuzzy-filter (matching the name and the command itself), Enter runs the selection, Esc dismisses. Combined with `--print` it prints the picked command instead of running it.
+A bare `taco` in a terminal opens an interactive picker over the resolved commands, full-screen like `fzf`: type to fuzzy-filter (matching the name and the command itself), Enter runs the selection, Esc dismisses. Combined with `--print` it prints the picked command instead of running it.
 
 The builtin subcommands that can run on their own (`ls`, `config`, `doctor`) are listed below your commands, tagged with `(builtin)` — typing `builtin` filters down to them.
 
