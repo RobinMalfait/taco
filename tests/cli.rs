@@ -729,3 +729,18 @@ fn a_closed_stdout_pipe_does_not_panic() {
     // Killed by SIGPIPE instead of exiting with a panic
     assert_eq!(output.status.code(), None);
 }
+
+#[test]
+fn verbose_list_shows_same_directory_aliases_as_siblings() {
+    let sandbox = Sandbox::new();
+    sandbox.write_config(&format!(
+        r#"{{"projects": {{"vitest": {{"test": "echo vitest"}}, "laravel": {{"artisan": "php artisan"}}, "tailwind": {{"tw": "echo tw"}}}}, "aliases": {{"{project}": ["vitest", "laravel"], "{base}": ["tailwind"]}}}}"#,
+        project = sandbox.project.display(),
+        base = sandbox.base.display()
+    ));
+
+    assert_snapshot!(
+        "print_tree_sibling_aliases",
+        sandbox.taco(&["ls", "--verbose"])
+    );
+}

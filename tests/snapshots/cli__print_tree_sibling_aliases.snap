@@ -1,0 +1,26 @@
+---
+source: tests/cli.rs
+expression: "sandbox.taco(&[\"ls\", \"--verbose\"])"
+snapshot_kind: text
+---
+exit code: 0
+----- stdout -----
+Available commands:
+
+<root>/project
+│
+├─ laravel (alias)
+│  └─ taco artisan
+│     php artisan
+│
+├─ vitest (alias)
+│  └─ taco test
+│     echo vitest
+│
+└─ <root>
+   │
+   └─ tailwind (alias)
+      └─ taco tw
+         echo tw
+
+3 commands

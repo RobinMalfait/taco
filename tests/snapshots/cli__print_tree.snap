@@ -1,6 +1,6 @@
 ---
 source: tests/cli.rs
-expression: "sandbox.taco_in(&sandbox.nested(), &[\"print\"])"
+expression: "sandbox.taco_in(&sandbox.nested(), &[\"ls\", \"--verbose\"])"
 snapshot_kind: text
 ---
 exit code: 0
@@ -17,7 +17,7 @@ Available commands:
    ├─ taco test (shadowed)
    │  echo parent-test
    │
-   └─ <root>/project/.taco.json
+   └─ .taco.json
       ├─ taco build
       │  echo local-build
       └─ taco test (shadowed)

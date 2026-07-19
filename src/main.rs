@@ -369,6 +369,7 @@ impl Config {
             if let Some(commands) = local.get(key) {
                 groups.push(CommandGroup {
                     source: format!("{key}/{LOCAL_CONFIG_FILE}"),
+                    directory: key.to_owned(),
                     via: None,
                     local: true,
                     commands: commands.clone(),
@@ -381,6 +382,7 @@ impl Config {
                     if let Some(commands) = self.projects.get(alias) {
                         groups.push(CommandGroup {
                             source: alias.to_owned(),
+                            directory: key.to_owned(),
                             via: Some(key.to_owned()),
                             local: false,
                             commands: commands.clone(),
@@ -393,6 +395,7 @@ impl Config {
             if let Some(commands) = self.projects.get(key) {
                 groups.push(CommandGroup {
                     source: key.to_owned(),
+                    directory: key.to_owned(),
                     via: None,
                     local: false,
                     commands: commands.clone(),
@@ -584,6 +587,10 @@ struct Diagnosis {
 struct CommandGroup {
     /// The project the commands are defined in
     source: String,
+
+    /// The directory the commands are attached to: the project's own path, the directory an
+    /// alias is attached to, or the directory holding the `.taco.json`
+    directory: String,
 
     /// The project that pulled these commands in via an alias, if any
     via: Option<String>,
@@ -1616,9 +1623,88 @@ fn print_flat_commands(groups: &[CommandGroup]) {
     );
 }
 
-/// Print the resolved commands as a tree that mirrors the resolution order: the current project
-/// first, with every following source nested one level deeper. The first definition of a command
-/// wins; definitions that lost are dimmed and tagged as shadowed.
+/// A child of a directory level in the verbose tree: one of the directory's own commands, or a
+/// whole source (an alias, the `.taco.json`) holding its commands.
+enum TreeNode<'a> {
+    Command {
+        group: usize,
+        name: &'a String,
+        command: &'a String,
+    },
+    Source {
+        group: usize,
+        label: String,
+        commands: &'a Project,
+    },
+}
+
+/// Group the display-ordered sources into one level per directory, holding all the sources
+/// attached to it. `group` on each node is the source's index in the display order.
+fn tree_levels<'a>(display: &[&'a CommandGroup]) -> Vec<(&'a str, Vec<TreeNode<'a>>)> {
+    let mut levels: Vec<(&str, Vec<TreeNode>)> = vec![];
+    for (index, group) in display.iter().enumerate() {
+        if levels
+            .last()
+            .is_none_or(|(directory, _)| *directory != group.directory)
+        {
+            levels.push((group.directory.as_str(), vec![]));
+        }
+        let nodes = &mut levels.last_mut().expect("just pushed").1;
+
+        if group.via.is_some() {
+            nodes.push(TreeNode::Source {
+                group: index,
+                label: format!("{} {}", group.source.bold(), "(alias)".dimmed()),
+                commands: &group.commands,
+            });
+        } else if group.local {
+            nodes.push(TreeNode::Source {
+                group: index,
+                label: LOCAL_CONFIG_FILE.bold().to_string(),
+                commands: &group.commands,
+            });
+        } else {
+            for (name, command) in &group.commands {
+                nodes.push(TreeNode::Command {
+                    group: index,
+                    name,
+                    command,
+                });
+            }
+        }
+    }
+
+    levels
+}
+
+/// Style a command name for the verbose tree, returning the name and a trailing tag. Losing
+/// definitions are dimmed and tagged as shadowed.
+fn style_tree_command(
+    name: &String,
+    group: usize,
+    winner: &BTreeMap<&str, usize>,
+    builtins: &[String],
+) -> (String, String) {
+    if winner[name.as_str()] != group {
+        (
+            name.dimmed().to_string(),
+            " (shadowed)".dimmed().to_string(),
+        )
+    } else if builtins.contains(name) {
+        (
+            name.blue().to_string(),
+            " (shadows the builtin)".dimmed().to_string(),
+        )
+    } else {
+        (name.blue().to_string(), String::new())
+    }
+}
+
+/// Print the resolved commands as a tree that mirrors the resolution order: the current directory
+/// first, with every parent directory nested one level deeper. Sources attached to the same
+/// directory (its own commands, its aliases, its `.taco.json`) are siblings, in resolution order.
+/// The first definition of a command wins; definitions that lost are dimmed and tagged as
+/// shadowed.
 fn print_grouped_commands(groups: &[CommandGroup]) {
     println!("Available commands:\n");
 
@@ -1645,56 +1731,86 @@ fn print_grouped_commands(groups: &[CommandGroup]) {
         println!("{}", " \u{2219} There are no commands available.".red());
     }
 
+    let levels = tree_levels(&display);
+
+    let style = |name: &String, group: usize| style_tree_command(name, group, &winner, &builtins);
+
     let terminal_columns = terminal_width();
+    let print_command_lines = |command: &str, prefix: &str| {
+        // Command lines start after the prefix and a space
+        let available =
+            terminal_columns.map(|columns| columns.saturating_sub(prefix.chars().count() + 1));
+        for (line, injected) in command
+            .lines()
+            .flat_map(|line| wrap_command(line, available))
+        {
+            println!(
+                "{} {}{}",
+                prefix.dimmed(),
+                line.dimmed(),
+                continuation_marker(injected)
+            );
+        }
+    };
 
     let mut indent = String::new();
-    for (index, group) in display.iter().enumerate() {
-        let last_group = index + 1 == display.len();
+    for (level_index, (directory, nodes)) in levels.iter().enumerate() {
+        let last_level = level_index + 1 == levels.len();
 
-        if index == 0 {
-            println!("{}", format_group_source(group));
+        if level_index == 0 {
+            println!("{}", directory.bold());
         } else {
             println!("{indent}{}", "│".dimmed());
-            println!("{indent}{} {}", "└─".dimmed(), format_group_source(group));
+            println!("{indent}{} {}", "└─".dimmed(), directory.bold());
             indent.push_str("   ");
         }
 
-        // Command lines start after the indentation, the branch and a space
-        let available = terminal_columns.map(|columns| columns.saturating_sub(indent.len() + 3));
-
-        for (position, (name, command)) in group.commands.iter().enumerate() {
-            let last = last_group && position + 1 == group.commands.len();
-            let (branch, continuation) = if last {
+        for (position, node) in nodes.iter().enumerate() {
+            // The parent directory still follows as the last child, unless this is the last level
+            let node_last = last_level && position + 1 == nodes.len();
+            let (branch, continuation) = if node_last {
                 ("└─", "  ")
             } else {
                 ("├─", "│ ")
             };
 
-            let (styled_name, tag) = if winner[name.as_str()] != index {
-                (
-                    name.dimmed().to_string(),
-                    " (shadowed)".dimmed().to_string(),
-                )
-            } else if builtins.contains(name) {
-                (
-                    name.blue().to_string(),
-                    " (shadows the builtin)".dimmed().to_string(),
-                )
-            } else {
-                (name.blue().to_string(), String::new())
-            };
+            match node {
+                TreeNode::Command {
+                    group,
+                    name,
+                    command,
+                } => {
+                    let (styled_name, tag) = style(name, *group);
+                    println!("{indent}{} taco {styled_name}{tag}", branch.dimmed());
+                    print_command_lines(command, &format!("{indent}{continuation}"));
+                }
+                TreeNode::Source {
+                    group,
+                    label,
+                    commands,
+                } => {
+                    println!("{indent}{}", "│".dimmed());
+                    println!("{indent}{} {label}", branch.dimmed());
+                    for (inner_position, (name, command)) in commands.iter().enumerate() {
+                        let (inner_branch, inner_continuation) =
+                            if inner_position + 1 == commands.len() {
+                                ("└─", "  ")
+                            } else {
+                                ("├─", "│ ")
+                            };
 
-            println!("{indent}{} taco {styled_name}{tag}", branch.dimmed());
-            for (line, injected) in command
-                .lines()
-                .flat_map(|line| wrap_command(line, available))
-            {
-                println!(
-                    "{indent}{} {}{}",
-                    continuation.dimmed(),
-                    line.dimmed(),
-                    continuation_marker(injected)
-                );
+                        let (styled_name, tag) = style(name, *group);
+                        println!(
+                            "{indent}{} {} taco {styled_name}{tag}",
+                            continuation.dimmed(),
+                            inner_branch.dimmed()
+                        );
+                        print_command_lines(
+                            command,
+                            &format!("{indent}{continuation} {inner_continuation}"),
+                        );
+                    }
+                }
             }
         }
     }

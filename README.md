@@ -322,14 +322,14 @@ taco ls
 #
 # taco build  cargo build --release
 # taco tdd    ./node_modules/.bin/vitest --watch
-# taco test   ./node_modules/.bin/vitest
+# taco test   cargo nextest run --release
 #
 # 3 commands
 ```
 
 Long commands wrap to the width of your terminal, aligned inside the command column. Wrapped lines end with a `\`, so what you see is still a valid shell command — a single argument is never broken in two, even when it is longer than a whole line. Piped or redirected output never wraps.
 
-Add `--verbose` (or `-v`) to see where every command comes from: a tree that mirrors the resolution order (see [Which command wins](#which-command-wins)), the current project first, with every parent directory, alias and `.taco.json` nested one level deeper. The first definition of a command is the one that runs; definitions further down that lost are greyed out and tagged as `(shadowed)`.
+Add `--verbose` (or `-v`) to see where every command comes from: a tree that mirrors the resolution order (see [Which command wins](#which-command-wins)). The current directory comes first and every parent directory nests one level deeper; the sources attached to the same directory — its own commands, its aliases, its `.taco.json` — are siblings under it, in resolution order. The first definition of a command is the one that runs; definitions further down that lost are greyed out and tagged as `(shadowed)`.
 
 ```sh
 taco ls --verbose
@@ -339,15 +339,17 @@ taco ls --verbose
 # ├─ taco build
 # │  cargo build --release
 # │
+# ├─ rust (alias)
+# │  └─ taco test
+# │     cargo nextest run --release
+# │
 # └─ /Users/robin/github.com
 #    ├─ taco tdd
 #    │  ./node_modules/.bin/vitest --watch
-#    ├─ taco build (shadowed)
-#    │  ./node_modules/.bin/esbuild
-#    └─ taco test
+#    └─ taco test (shadowed)
 #       ./node_modules/.bin/vitest
 #
-# 4 commands
+# 3 commands
 ```
 
 Or..
@@ -355,8 +357,9 @@ Or..
 ```sh
 taco ls --json
 # {
-#   "la": "ls -lah",
-#   "test": "./node_modules/.bin/vitest"
+#   "build": "cargo build --release",
+#   "tdd": "./node_modules/.bin/vitest --watch",
+#   "test": "cargo nextest run --release"
 # }
 ```
 
