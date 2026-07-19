@@ -140,12 +140,19 @@ taco taco config   # the builtin
 
 ---
 
-## Requirements
-
-- This is a Rust project and the binaries are not published
-  anywhere. This means that you need to have Rust/Cargo installed.
-
 ## Installation
+
+### Homebrew
+
+```sh
+brew install RobinMalfait/tap/taco
+```
+
+Prebuilt binaries for every release are also attached to the [GitHub releases](https://github.com/RobinMalfait/taco/releases).
+
+### From source
+
+With Rust/Cargo installed:
 
 ```sh
 cargo build --release
