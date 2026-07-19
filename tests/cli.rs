@@ -750,3 +750,14 @@ fn verbose_list_shows_same_directory_aliases_as_siblings() {
         sandbox.taco(&["ls", "--verbose"])
     );
 }
+
+#[test]
+fn a_bare_taco_without_a_terminal_prints_the_help() {
+    let sandbox = Sandbox::new();
+    sandbox.taco(&["add", "greet", "--", "echo", "hello"]);
+
+    // Piped stdin/stdout: no picker, the help as before
+    let output = sandbox.taco(&[]);
+    assert!(output.contains("exit code: 0"), "{output}");
+    assert!(output.contains("Usage: taco"), "{output}");
+}

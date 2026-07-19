@@ -4,7 +4,7 @@ use colored::Colorize;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs;
-use std::io::Write;
+use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
 mod rich_edit;
@@ -671,6 +671,42 @@ fn main() -> Result<()> {
 
     let Some(command) = args.command else {
         let Some(alias) = args.alias else {
+            // A bare `taco` in a terminal opens an interactive picker over the available
+            // commands; everywhere else (scripts, pipes, an empty or broken config) it keeps
+            // printing the help. The help stays reachable via `taco --help`.
+            if std::io::stdin().is_terminal()
+                && std::io::stdout().is_terminal()
+                && let Ok(config) = read_config()
+                && let Ok(local) = read_local_projects(&pwd)
+            {
+                let project = config.resolve_project(&pwd, &local);
+                if !project.is_empty() {
+                    match pick_command(&project)? {
+                        // Dismissed with Esc
+                        None => return Ok(()),
+                        Some(Picked::User(command)) => {
+                            if args.print {
+                                println!("{command}");
+                                return Ok(());
+                            }
+
+                            return run_command(command, &pwd, &args.arguments);
+                        }
+                        Some(Picked::Builtin(name)) => {
+                            if args.print {
+                                // The namespaced form works even when a user command shadows it
+                                println!("taco taco {name}");
+                                return Ok(());
+                            }
+
+                            let cli = Cli::parse_from(["taco", name.as_str()]);
+                            let command = cli.command.expect("picked a builtin subcommand");
+                            return run_builtin(command, pwd);
+                        }
+                    }
+                }
+            }
+
             Cli::command().print_help()?;
             return Ok(());
         };
@@ -1415,6 +1451,84 @@ fn run_builtin(command: Commands, pwd: PathBuf) -> Result<()> {
 
 /// Run the aliased command through the user's shell, forwarding any extra arguments, and exit with
 /// the same status code as the command itself.
+/// What the interactive picker resolved to: one of the user's commands, or a builtin subcommand.
+enum Picked<'a> {
+    User(&'a String),
+    Builtin(String),
+}
+
+/// The builtin subcommands that can run without any arguments, as `(name, description)` pairs.
+/// Only these make sense in the interactive picker.
+fn runnable_builtins() -> Vec<(String, String)> {
+    Cli::command()
+        .get_subcommands()
+        .filter(|command| !command.is_hide_set() && command.get_name() != "taco")
+        .filter(|command| {
+            command
+                .get_arguments()
+                .all(|argument| !argument.is_required_set())
+        })
+        .map(|command| {
+            (
+                command.get_name().to_owned(),
+                command
+                    .get_about()
+                    .map(ToString::to_string)
+                    .unwrap_or_default(),
+            )
+        })
+        .collect()
+}
+
+/// Let the user pick one of the resolved commands interactively, fuzzy-matching on both the name
+/// and the command itself. The builtin subcommands are listed below the user's commands, tagged
+/// `(builtin)` — typing "builtin" filters down to them. Returns `None` when dismissed.
+fn pick_command(project: &Project) -> Result<Option<Picked<'_>>> {
+    let builtins = runnable_builtins();
+
+    let width = project
+        .keys()
+        .map(|name| name.chars().count())
+        .chain(builtins.iter().map(|(name, _)| name.chars().count()))
+        .max()
+        .unwrap_or(0);
+    let pad = |name: &str| " ".repeat(width - name.chars().count());
+
+    // Plain text on purpose: the fuzzy matcher would otherwise match inside color codes
+    let items: Vec<String> = project
+        .iter()
+        .map(|(name, command)| {
+            format!(
+                "{name}{}  {}",
+                pad(name),
+                command.lines().next().unwrap_or_default()
+            )
+        })
+        .chain(
+            builtins
+                .iter()
+                .map(|(name, about)| format!("{name}{}  (builtin) {about}", pad(name))),
+        )
+        .collect();
+
+    let selection = dialoguer::FuzzySelect::with_theme(&dialoguer::theme::ColorfulTheme::default())
+        .with_prompt("Run a command")
+        .items(&items)
+        .default(0)
+        .interact_opt()
+        .wrap_err("Failed to show the interactive picker")?;
+
+    Ok(selection.map(|index| {
+        if index < project.len() {
+            let (_, command) = project.iter().nth(index).expect("index is in range");
+            Picked::User(command)
+        } else {
+            let (name, _) = &builtins[index - project.len()];
+            Picked::Builtin(name.clone())
+        }
+    }))
+}
+
 fn run_command(command: &str, pwd: &Path, arguments: &[String]) -> Result<()> {
     let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
 

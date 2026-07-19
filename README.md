@@ -243,6 +243,14 @@ taco tets
 
 The same suggestions apply to `taco edit`, `taco which`, `taco rm` and `taco unalias`.
 
+#### Pick – `taco`
+
+A bare `taco` in a terminal opens an interactive picker over the resolved commands: type to fuzzy-filter (matching the name and the command itself), Enter runs the selection, Esc dismisses. Combined with `--print` it prints the picked command instead of running it.
+
+The builtin subcommands that can run on their own (`ls`, `config`, `doctor`) are listed below your commands, tagged with `(builtin)` — typing `builtin` filters down to them.
+
+Outside a terminal (scripts, pipes), with no commands available, or with a broken config, a bare `taco` prints the help instead — and the help always stays reachable via `taco --help`.
+
 #### Which – `taco which {name}`
 
 Shows the command that would run, and where it is defined. If the command is defined in multiple places (a parent directory, or an alias), the shadowed definitions are listed too, closest one first.
