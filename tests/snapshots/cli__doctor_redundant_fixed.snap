@@ -1,0 +1,15 @@
+---
+source: tests/cli.rs
+expression: "sandbox.taco_stdin(&sandbox.project, &[\"doctor\", \"--fix\"], \"y\\n\")"
+snapshot_kind: text
+---
+exit code: 0
+----- stdout -----
+Checking <root>/taco.json
+
+Aliases already provided by a parent directory:
+  ∙ vitest (aliased in <root>/project, already aliased in <root>)
+  Removing these does not change any command.
+Remove these redundant aliases from the config? (y/N) 
+
+Fixed 1 issue.

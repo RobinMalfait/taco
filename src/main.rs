@@ -274,7 +274,7 @@ enum CompleteKind {
     Aliases,
 }
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 struct Config {
     /// A project can map to other projects so that it can inherit values from that other project.
     /// This allows you to define some common projects like "webdev" or "rust" or anything you
@@ -403,8 +403,9 @@ impl Config {
         groups
     }
 
-    /// Check the config for stale entries.
-    fn diagnose(&self) -> Diagnosis {
+    /// Check the config for stale entries. Reads the `.taco.json` files along the way, they take
+    /// part in deciding whether an alias is redundant.
+    fn diagnose(&self) -> Result<Diagnosis> {
         let mut diagnosis = Diagnosis::default();
 
         // Path-based projects whose directory no longer exists. Keys not starting with `/` are
@@ -452,7 +453,41 @@ impl Config {
             }
         }
 
-        diagnosis
+        // Aliases whose target is already attached to an ancestor directory. Removing one is
+        // only safe when it provably changes nothing: the commands at the attachment directory
+        // must resolve the same with and without it. A source in between — a personal command,
+        // another alias, a `.taco.json` — can flip a winner, in which case the alias stays.
+        for (path, targets) in &self.aliases {
+            let dir = Path::new(path);
+            for target in targets {
+                let Some(ancestor) = dir
+                    .ancestors()
+                    .skip(1)
+                    .filter_map(Path::to_str)
+                    .find(|key| {
+                        self.aliases
+                            .get(*key)
+                            .is_some_and(|attached| attached.contains(target))
+                    })
+                else {
+                    continue;
+                };
+
+                let local = read_local_projects(dir)?;
+                let mut without = self.clone();
+                without.remove_alias(dir, target)?;
+
+                if without.resolve_project(dir, &local) == self.resolve_project(dir, &local) {
+                    diagnosis.redundant_aliases.push((
+                        path.clone(),
+                        target.clone(),
+                        ancestor.to_owned(),
+                    ));
+                }
+            }
+        }
+
+        Ok(diagnosis)
     }
 
     /// Get the resolved commands, these are the commands of the current project, merged with all
@@ -531,6 +566,10 @@ struct Diagnosis {
 
     /// Aliases pointing to a project that is not defined, as `(attachment path, target)` pairs
     unknown_targets: Vec<(String, String)>,
+
+    /// Aliases already provided by an ancestor directory, safe to remove without changing any
+    /// command, as `(attachment path, target, ancestor path)` tuples
+    redundant_aliases: Vec<(String, String, String)>,
 
     /// Named presets that are never aliased
     unused_presets: Vec<String>,
@@ -1136,7 +1175,7 @@ fn run_builtin(command: Commands, pwd: PathBuf) -> Result<()> {
             let file_path = config_file_location()?;
             println!("Checking {}\n", file_path.display().to_string().dimmed());
 
-            let diagnosis = config.diagnose();
+            let diagnosis = config.diagnose()?;
             let mut issues = 0;
             let mut fixed = 0;
 
@@ -1203,6 +1242,29 @@ fn run_builtin(command: Commands, pwd: PathBuf) -> Result<()> {
                         }
                     }
                     fixed += diagnosis.unknown_targets.len();
+                }
+                println!();
+            }
+
+            if !diagnosis.redundant_aliases.is_empty() {
+                issues += diagnosis.redundant_aliases.len();
+                println!("Aliases already provided by a parent directory:");
+                for (path, target, ancestor) in &diagnosis.redundant_aliases {
+                    println!(
+                        "  \u{2219} {} {}",
+                        target.blue(),
+                        format!("(aliased in {path}, already aliased in {ancestor})").dimmed()
+                    );
+                }
+                println!(
+                    "{}",
+                    "  Removing these does not change any command.".dimmed()
+                );
+                if fix && confirm("Remove these redundant aliases from the config?") {
+                    for (path, target, _) in &diagnosis.redundant_aliases {
+                        config.remove_alias(Path::new(path), target)?;
+                    }
+                    fixed += diagnosis.redundant_aliases.len();
                 }
                 println!();
             }
@@ -1944,6 +2006,48 @@ mod tests {
     }
 
     #[test]
+    fn a_child_alias_already_provided_by_a_parent_is_redundant() {
+        let mut config = Config::default();
+        config
+            .set_command(Path::new("vitest"), "test", "vitest run")
+            .unwrap();
+        config.add_alias(Path::new("/projects"), "vitest").unwrap();
+        config
+            .add_alias(Path::new("/projects/mine"), "vitest")
+            .unwrap();
+
+        let diagnosis = config.diagnose().unwrap();
+        assert_eq!(
+            diagnosis.redundant_aliases,
+            vec![(
+                "/projects/mine".to_owned(),
+                "vitest".to_owned(),
+                "/projects".to_owned()
+            )]
+        );
+    }
+
+    #[test]
+    fn an_alias_guarding_against_an_intermediate_command_is_not_redundant() {
+        // Removing the vitest alias in /projects/mine would hand `test` to the /projects
+        // command instead of the vitest alias in /
+        let mut config = Config::default();
+        config
+            .set_command(Path::new("vitest"), "test", "vitest run")
+            .unwrap();
+        config.add_alias(Path::new("/"), "vitest").unwrap();
+        config
+            .set_command(Path::new("/projects"), "test", "jest")
+            .unwrap();
+        config
+            .add_alias(Path::new("/projects/mine"), "vitest")
+            .unwrap();
+
+        let diagnosis = config.diagnose().unwrap();
+        assert!(diagnosis.redundant_aliases.is_empty());
+    }
+
+    #[test]
     fn removing_the_last_alias_cleans_up_the_project_entry() {
         let mut config = Config::default();
         config
@@ -2013,7 +2117,7 @@ mod tests {
             .add_alias(Path::new("/taco-test-also-does-not-exist"), "prettier")
             .unwrap();
 
-        let diagnosis = config.diagnose();
+        let diagnosis = config.diagnose().unwrap();
         assert_eq!(
             diagnosis.missing_projects,
             vec!["/taco-test-does-not-exist"]
@@ -2038,7 +2142,7 @@ mod tests {
             .unwrap();
         config.add_alias(Path::new("/"), "vitest").unwrap();
 
-        let diagnosis = config.diagnose();
+        let diagnosis = config.diagnose().unwrap();
         assert!(diagnosis.missing_projects.is_empty());
         assert!(diagnosis.dead_alias_paths.is_empty());
         assert!(diagnosis.unknown_targets.is_empty());
@@ -2089,7 +2193,7 @@ mod tests {
             .unwrap();
         config.set_command(Path::new("/"), "test", "ls").unwrap();
 
-        let diagnosis = config.diagnose();
+        let diagnosis = config.diagnose().unwrap();
         assert_eq!(
             diagnosis.shadowed_builtins,
             vec![("/".to_string(), "config".to_string())]

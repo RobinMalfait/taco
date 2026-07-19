@@ -1,0 +1,17 @@
+---
+source: tests/cli.rs
+expression: sandbox.config_contents()
+snapshot_kind: text
+---
+{
+  "aliases": {
+    "<root>": [
+      "vitest"
+    ]
+  },
+  "projects": {
+    "vitest": {
+      "test": "echo vitest"
+    }
+  }
+}

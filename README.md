@@ -385,6 +385,8 @@ Set the `TACO_CONFIG` environment variable to use a different config file locati
 
 Configs accumulate rot over time. `taco doctor` checks for project directories that no longer exist, aliases attached to directories that are gone, and aliases pointing to projects that are not defined. Presets that are never aliased are reported too, but only informationally.
 
+It also finds aliases that are redundant because a parent directory already attaches the same project. An alias is only reported when removing it provably changes nothing: the commands must resolve exactly the same without it. If a source in between — a personal command, another alias, a `.taco.json` — would take over one of the commands, the alias is load-bearing and stays.
+
 ```sh
 taco doctor
 # Checking /Users/robin/.config/taco/taco.json

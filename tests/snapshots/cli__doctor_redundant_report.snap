@@ -1,0 +1,14 @@
+---
+source: tests/cli.rs
+expression: "sandbox.taco(&[\"doctor\"])"
+snapshot_kind: text
+---
+exit code: 1
+----- stdout -----
+Checking <root>/taco.json
+
+Aliases already provided by a parent directory:
+  ∙ vitest (aliased in <root>/project, already aliased in <root>)
+  Removing these does not change any command.
+
+1 issue found. Run `taco doctor --fix` to clean up.

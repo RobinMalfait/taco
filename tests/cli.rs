@@ -665,3 +665,36 @@ fn print_is_a_legacy_alias_for_ls() {
 
     assert_eq!(sandbox.taco(&["ls"]), sandbox.taco(&["print"]));
 }
+
+#[test]
+fn doctor_removes_redundant_aliases() {
+    let sandbox = Sandbox::new();
+    sandbox.write_config(&format!(
+        r#"{{"projects": {{"vitest": {{"test": "echo vitest"}}}}, "aliases": {{"{base}": ["vitest"], "{project}": ["vitest"]}}}}"#,
+        base = sandbox.base.display(),
+        project = sandbox.project.display()
+    ));
+
+    assert_snapshot!("doctor_redundant_report", sandbox.taco(&["doctor"]));
+    assert_snapshot!(
+        "doctor_redundant_fixed",
+        sandbox.taco_stdin(&sandbox.project, &["doctor", "--fix"], "y\n")
+    );
+    assert_snapshot!("doctor_redundant_config_after", sandbox.config_contents());
+}
+
+#[test]
+fn doctor_keeps_an_alias_guarding_an_intermediate_command() {
+    let sandbox = Sandbox::new();
+
+    // base aliases vitest, project defines its own `test`, nested aliases vitest again: the
+    // nested alias is load-bearing, without it project's `test` would win in nested
+    sandbox.write_config(&format!(
+        r#"{{"projects": {{"vitest": {{"test": "echo vitest"}}, "{project}": {{"test": "echo project-test"}}}}, "aliases": {{"{base}": ["vitest"], "{nested}": ["vitest"]}}}}"#,
+        base = sandbox.base.display(),
+        project = sandbox.project.display(),
+        nested = sandbox.nested().display()
+    ));
+
+    assert_snapshot!("doctor_guarding_alias_kept", sandbox.taco(&["doctor"]));
+}
