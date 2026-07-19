@@ -10,6 +10,12 @@ if ! grep -q "^version = \"$version\"$" Cargo.toml; then
   exit 1
 fi
 
+# The changelog section for this version becomes the release notes
+if ! grep -Eq "^## \[?$version\]?" CHANGELOG.md; then
+  echo "CHANGELOG.md has no \"## [$version]\" section, write the release notes first." >&2
+  exit 1
+fi
+
 git tag "$tag"
 git push origin "$tag"
 
