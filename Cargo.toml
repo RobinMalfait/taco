@@ -1,6 +1,6 @@
 [package]
 name = "taco"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 license = "MIT"
 description = "Normalize all your commands by wrapping them in a taco"
@@ -32,4 +32,3 @@ libc = "0.2.186"
 [profile.dist]
 inherits = "release"
 lto = "thin"
-

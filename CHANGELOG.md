@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Nothing yet!
 
+## [0.1.1] - 2026-10-05
+
+### Fixed
+
+- `taco alias` now inherits commands transitively through the target project's aliases, preserving command precedence and safely skipping circular references
+- `taco doctor` now recognizes alias targets that only inherit commands from other projects
+
 ## [0.1.0] - 2026-07-19
 
 ### Added
@@ -22,5 +29,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `taco doctor` finds stale projects, dead aliases, and aliases already provided by a parent directory — `--fix` cleans them up
 - `taco completions` generates directory-aware tab completions for zsh, bash, and fish
 
-[unreleased]: https://github.com/RobinMalfait/taco/compare/v0.1.0...HEAD
+[unreleased]: https://github.com/RobinMalfait/taco/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/RobinMalfait/taco/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/RobinMalfait/taco/releases/tag/v0.1.0
