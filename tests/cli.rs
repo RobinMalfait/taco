@@ -269,6 +269,21 @@ fn path_aliases_inherit_transitive_commands() {
     ----- stdout -----
     tdd	echo vitest-tdd
     ");
+    assert_snapshot!(sandbox.taco(&["ls", "--verbose"]), @"
+    exit code: 0
+    ----- stdout -----
+    Available commands:
+
+    <root>/project
+    │
+    └─ <root>/other (alias)
+       │
+       └─ vitest (alias)
+          └─ taco tdd
+             echo vitest-tdd
+
+    1 command
+    ");
     assert_snapshot!(sandbox.taco(&["doctor"]), @"
     exit code: 0
     ----- stdout -----
@@ -795,6 +810,50 @@ fn verbose_list_shows_same_directory_aliases_as_siblings() {
         "print_tree_sibling_aliases",
         sandbox.taco(&["ls", "--verbose"])
     );
+}
+
+#[test]
+fn verbose_list_preserves_alias_branches_and_shadowing() {
+    let sandbox = Sandbox::new();
+    sandbox.write_config(&format!(
+        r#"{{
+            "projects": {{
+                "shared": {{"test": "echo shared"}},
+                "left": {{"test": "echo left"}}
+            }},
+            "aliases": {{
+                "{}": ["left", "right"],
+                "left": ["shared"],
+                "right": ["shared"],
+                "shared": ["shared"]
+            }}
+        }}"#,
+        sandbox.project.display()
+    ));
+
+    assert_snapshot!(sandbox.taco(&["ls", "--verbose"]), @"
+    exit code: 0
+    ----- stdout -----
+    Available commands:
+
+    <root>/project
+    │
+    ├─ right (alias)
+    │  │
+    │  └─ shared (alias)
+    │     └─ taco test
+    │        echo shared
+    │
+    └─ left (alias)
+       ├─ taco test (shadowed)
+       │  echo left
+       │
+       └─ shared (alias)
+          └─ taco test (shadowed)
+             echo shared
+
+    1 command
+    ");
 }
 
 #[test]

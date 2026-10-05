@@ -348,7 +348,7 @@ taco ls
 
 Long commands wrap to the width of your terminal, aligned inside the command column. Wrapped lines end with a `\`, so what you see is still a valid shell command — a single argument is never broken in two, even when it is longer than a whole line. Piped or redirected output never wraps.
 
-Add `--verbose` (or `-v`) to see where every command comes from: a tree that mirrors the resolution order (see [Which command wins](#which-command-wins)). The current directory comes first and every parent directory nests one level deeper; the sources attached to the same directory — its own commands, its aliases, its `.taco.json` — are siblings under it, in resolution order. The first definition of a command is the one that runs; definitions further down that lost are greyed out and tagged as `(shadowed)`.
+Add `--verbose` (or `-v`) to see where every command comes from: a tree that mirrors the resolution order (see [Which command wins](#which-command-wins)). The current directory comes first and every parent directory nests one level deeper; the sources attached to the same directory — its own commands, its aliases, its `.taco.json` — are siblings under it, in resolution order. Transitive aliases nest under the project that includes them, so the full alias chain remains visible even when an intermediate project has no commands of its own. The first definition of a command is the one that runs; definitions further down that lost are greyed out and tagged as `(shadowed)`.
 
 ```sh
 taco ls --verbose

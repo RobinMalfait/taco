@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Nothing yet!
 
+## [0.1.2] - 2026-10-05
+
+### Fixed
+
+- `taco ls --verbose` now shows the full alias chain as nested branches, including intermediate projects that only inherit commands
+
 ## [0.1.1] - 2026-10-05
 
 ### Fixed
@@ -29,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `taco doctor` finds stale projects, dead aliases, and aliases already provided by a parent directory — `--fix` cleans them up
 - `taco completions` generates directory-aware tab completions for zsh, bash, and fish
 
-[unreleased]: https://github.com/RobinMalfait/taco/compare/v0.1.1...HEAD
+[unreleased]: https://github.com/RobinMalfait/taco/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/RobinMalfait/taco/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/RobinMalfait/taco/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/RobinMalfait/taco/releases/tag/v0.1.0

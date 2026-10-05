@@ -371,18 +371,14 @@ impl Config {
                     source: format!("{key}/{LOCAL_CONFIG_FILE}"),
                     directory: key.to_owned(),
                     via: None,
+                    alias_chain: vec![],
                     local: true,
                     commands: commands.clone(),
                 });
             }
 
             // Personal commands, including the full chain of aliases attached here
-            self.collect_command_groups(
-                key,
-                key,
-                &mut std::collections::BTreeSet::new(),
-                &mut groups,
-            );
+            self.collect_command_groups(key, key, &mut vec![], &mut groups);
         }
 
         groups
@@ -392,14 +388,15 @@ impl Config {
         &self,
         key: &str,
         directory: &str,
-        visiting: &mut std::collections::BTreeSet<String>,
+        visiting: &mut Vec<String>,
         groups: &mut Vec<CommandGroup>,
     ) {
         // Only skip cycles in the current chain. A shared target must still be visited again
         // through a later alias, since the last alias wins.
-        if !visiting.insert(key.to_owned()) {
+        if visiting.iter().any(|source| source == key) {
             return;
         }
+        visiting.push(key.to_owned());
 
         if let Some(aliases) = self.aliases.get(key) {
             for alias in aliases {
@@ -413,12 +410,13 @@ impl Config {
                 source: key.to_owned(),
                 directory: directory.to_owned(),
                 via: (key != directory).then(|| directory.to_owned()),
+                alias_chain: visiting[1..].to_vec(),
                 local: false,
                 commands: commands.clone(),
             });
         }
 
-        visiting.remove(key);
+        visiting.pop();
     }
 
     /// Check the config for stale entries. Reads the `.taco.json` files along the way, they take
@@ -609,6 +607,9 @@ struct CommandGroup {
 
     /// The project that pulled these commands in via an alias, if any
     via: Option<String>,
+
+    /// The alias targets followed from the attachment directory to the source project
+    alias_chain: Vec<String>,
 
     /// Whether the commands come from a repo-local `.taco.json` file instead of your own config
     local: bool,
@@ -1814,10 +1815,39 @@ enum TreeNode<'a> {
         command: &'a String,
     },
     Source {
-        group: usize,
+        source: &'a str,
         label: String,
-        commands: &'a Project,
+        children: Vec<TreeNode<'a>>,
     },
+}
+
+/// Keep shared prefixes together while retaining separate branches for repeated alias targets.
+fn append_tree_group<'a>(
+    nodes: &mut Vec<TreeNode<'a>>,
+    chain: &'a [String],
+    group: &'a CommandGroup,
+    index: usize,
+) {
+    if let Some((alias, rest)) = chain.split_first() {
+        if !matches!(nodes.last(), Some(TreeNode::Source { source, .. }) if *source == alias) {
+            nodes.push(TreeNode::Source {
+                source: alias,
+                label: format!("{} {}", alias.bold(), "(alias)".dimmed()),
+                children: vec![],
+            });
+        }
+        if let Some(TreeNode::Source { children, .. }) = nodes.last_mut() {
+            append_tree_group(children, rest, group, index);
+        }
+    } else {
+        for (name, command) in &group.commands {
+            nodes.push(TreeNode::Command {
+                group: index,
+                name,
+                command,
+            });
+        }
+    }
 }
 
 /// Group the display-ordered sources into one level per directory, holding all the sources
@@ -1833,26 +1863,16 @@ fn tree_levels<'a>(display: &[&'a CommandGroup]) -> Vec<(&'a str, Vec<TreeNode<'
         }
         let nodes = &mut levels.last_mut().expect("just pushed").1;
 
-        if group.via.is_some() {
+        if group.local {
+            let mut children = vec![];
+            append_tree_group(&mut children, &[], group, index);
             nodes.push(TreeNode::Source {
-                group: index,
-                label: format!("{} {}", group.source.bold(), "(alias)".dimmed()),
-                commands: &group.commands,
-            });
-        } else if group.local {
-            nodes.push(TreeNode::Source {
-                group: index,
+                source: LOCAL_CONFIG_FILE,
                 label: LOCAL_CONFIG_FILE.bold().to_string(),
-                commands: &group.commands,
+                children,
             });
         } else {
-            for (name, command) in &group.commands {
-                nodes.push(TreeNode::Command {
-                    group: index,
-                    name,
-                    command,
-                });
-            }
+            append_tree_group(nodes, &group.alias_chain, group, index);
         }
     }
 
@@ -1935,18 +1955,13 @@ fn print_grouped_commands(groups: &[CommandGroup]) {
         }
     };
 
-    let mut indent = String::new();
-    for (level_index, (directory, nodes)) in levels.iter().enumerate() {
-        let last_level = level_index + 1 == levels.len();
-
-        if level_index == 0 {
-            println!("{}", directory.bold());
-        } else {
-            println!("{indent}{}", "│".dimmed());
-            println!("{indent}{} {}", "└─".dimmed(), directory.bold());
-            indent.push_str("   ");
-        }
-
+    fn print_nodes(
+        nodes: &[TreeNode],
+        indent: &str,
+        last_level: bool,
+        style: &impl Fn(&String, usize) -> (String, String),
+        print_command_lines: &impl Fn(&str, &str),
+    ) {
         for (position, node) in nodes.iter().enumerate() {
             // The parent directory still follows as the last child, unless this is the last level
             let node_last = last_level && position + 1 == nodes.len();
@@ -1967,34 +1982,35 @@ fn print_grouped_commands(groups: &[CommandGroup]) {
                     print_command_lines(command, &format!("{indent}{continuation}"));
                 }
                 TreeNode::Source {
-                    group,
-                    label,
-                    commands,
+                    label, children, ..
                 } => {
                     println!("{indent}{}", "│".dimmed());
                     println!("{indent}{} {label}", branch.dimmed());
-                    for (inner_position, (name, command)) in commands.iter().enumerate() {
-                        let (inner_branch, inner_continuation) =
-                            if inner_position + 1 == commands.len() {
-                                ("└─", "  ")
-                            } else {
-                                ("├─", "│ ")
-                            };
-
-                        let (styled_name, tag) = style(name, *group);
-                        println!(
-                            "{indent}{} {} taco {styled_name}{tag}",
-                            continuation.dimmed(),
-                            inner_branch.dimmed()
-                        );
-                        print_command_lines(
-                            command,
-                            &format!("{indent}{continuation} {inner_continuation}"),
-                        );
-                    }
+                    print_nodes(
+                        children,
+                        &format!("{indent}{continuation} "),
+                        true,
+                        style,
+                        print_command_lines,
+                    );
                 }
             }
         }
+    }
+
+    let mut indent = String::new();
+    for (level_index, (directory, nodes)) in levels.iter().enumerate() {
+        let last_level = level_index + 1 == levels.len();
+
+        if level_index == 0 {
+            println!("{}", directory.bold());
+        } else {
+            println!("{indent}{}", "│".dimmed());
+            println!("{indent}{} {}", "└─".dimmed(), directory.bold());
+            indent.push_str("   ");
+        }
+
+        print_nodes(nodes, &indent, last_level, &style, &print_command_lines);
     }
 
     // Footer
