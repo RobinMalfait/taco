@@ -233,6 +233,52 @@ fn aliased_projects_are_inherited() {
 }
 
 #[test]
+fn path_aliases_inherit_transitive_commands() {
+    let sandbox = Sandbox::new();
+    let other = sandbox.base.join("other");
+    fs::create_dir(&other).unwrap();
+    sandbox.write_config(r#"{"projects": {"vitest": {"tdd": "echo vitest-tdd"}}}"#);
+
+    sandbox.taco_in(&other, &["alias", "vitest"]);
+    sandbox.taco(&["alias", other.to_str().unwrap()]);
+
+    assert_snapshot!(sandbox.taco_in(&sandbox.nested(), &["tdd"]), @"
+    exit code: 0
+    ----- stdout -----
+    vitest-tdd
+    ");
+    assert_snapshot!(sandbox.taco(&["which", "tdd"]), @"
+    exit code: 0
+    ----- stdout -----
+    taco tdd
+      echo vitest-tdd
+
+    Defined in vitest (via alias in <root>/project)
+    ");
+    assert_snapshot!(sandbox.taco(&["ls"]), @"
+    exit code: 0
+    ----- stdout -----
+    Available commands:
+
+    taco tdd  echo vitest-tdd
+
+    1 command
+    ");
+    assert_snapshot!(sandbox.taco(&["__complete", "commands"]), @"
+    exit code: 0
+    ----- stdout -----
+    tdd	echo vitest-tdd
+    ");
+    assert_snapshot!(sandbox.taco(&["doctor"]), @"
+    exit code: 0
+    ----- stdout -----
+    Checking <root>/taco.json
+
+    No issues found, your taco is fresh!
+    ");
+}
+
+#[test]
 fn user_commands_win_over_builtins() {
     let sandbox = Sandbox::new();
 

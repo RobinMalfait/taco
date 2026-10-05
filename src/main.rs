@@ -376,34 +376,49 @@ impl Config {
                 });
             }
 
-            // Commands inherited via aliases
-            if let Some(aliases) = self.aliases.get(key) {
-                for alias in aliases {
-                    if let Some(commands) = self.projects.get(alias) {
-                        groups.push(CommandGroup {
-                            source: alias.to_owned(),
-                            directory: key.to_owned(),
-                            via: Some(key.to_owned()),
-                            local: false,
-                            commands: commands.clone(),
-                        });
-                    }
-                }
-            }
-
-            // Commands of the project itself
-            if let Some(commands) = self.projects.get(key) {
-                groups.push(CommandGroup {
-                    source: key.to_owned(),
-                    directory: key.to_owned(),
-                    via: None,
-                    local: false,
-                    commands: commands.clone(),
-                });
-            }
+            // Personal commands, including the full chain of aliases attached here
+            self.collect_command_groups(
+                key,
+                key,
+                &mut std::collections::BTreeSet::new(),
+                &mut groups,
+            );
         }
 
         groups
+    }
+
+    fn collect_command_groups(
+        &self,
+        key: &str,
+        directory: &str,
+        visiting: &mut std::collections::BTreeSet<String>,
+        groups: &mut Vec<CommandGroup>,
+    ) {
+        // Only skip cycles in the current chain. A shared target must still be visited again
+        // through a later alias, since the last alias wins.
+        if !visiting.insert(key.to_owned()) {
+            return;
+        }
+
+        if let Some(aliases) = self.aliases.get(key) {
+            for alias in aliases {
+                self.collect_command_groups(alias, directory, visiting, groups);
+            }
+        }
+
+        // A project's own commands win over everything inherited through its aliases.
+        if let Some(commands) = self.projects.get(key) {
+            groups.push(CommandGroup {
+                source: key.to_owned(),
+                directory: directory.to_owned(),
+                via: (key != directory).then(|| directory.to_owned()),
+                local: false,
+                commands: commands.clone(),
+            });
+        }
+
+        visiting.remove(key);
     }
 
     /// Check the config for stale entries. Reads the `.taco.json` files along the way, they take
@@ -427,7 +442,7 @@ impl Config {
             }
 
             for target in targets {
-                if !self.projects.contains_key(target) {
+                if !self.projects.contains_key(target) && !self.aliases.contains_key(target) {
                     diagnosis
                         .unknown_targets
                         .push((path.clone(), target.clone()));
@@ -2271,6 +2286,85 @@ mod tests {
         assert_eq!(groups.len(), 1);
         assert_eq!(groups[0].source, "vitest");
         assert_eq!(groups[0].via.as_deref(), Some("/projects/app"));
+    }
+
+    #[test]
+    fn transitive_aliases_preserve_precedence_and_sources() {
+        let config: Config = serde_json::from_str(
+            r#"{
+                "projects": {
+                    "base": {"test": "base-test", "build": "base-build", "dev": "base-dev"},
+                    "/presets/webdev": {"test": "webdev-test", "build": "webdev-build"},
+                    "/projects/app": {"test": "app-test"}
+                },
+                "aliases": {
+                    "/projects/app": ["/presets/webdev"],
+                    "/presets/webdev": ["middle"],
+                    "middle": ["base", "missing"]
+                }
+            }"#,
+        )
+        .unwrap();
+
+        let resolved =
+            config.resolve_project(Path::new("/projects/app/src"), &LocalProjects::new());
+        assert_eq!(resolved["test"], "app-test");
+        assert_eq!(resolved["build"], "webdev-build");
+        assert_eq!(resolved["dev"], "base-dev");
+
+        let groups =
+            config.resolve_project_grouped(Path::new("/projects/app/src"), &LocalProjects::new());
+        let sources: Vec<_> = groups.iter().map(|group| group.source.as_str()).collect();
+        assert_eq!(sources, ["base", "/presets/webdev", "/projects/app"]);
+        assert_eq!(groups[0].directory, "/projects/app");
+        assert_eq!(groups[0].via.as_deref(), Some("/projects/app"));
+    }
+
+    #[test]
+    fn later_aliases_revisit_shared_transitive_targets() {
+        let config: Config = serde_json::from_str(
+            r#"{
+                "projects": {
+                    "base": {"test": "base-test"},
+                    "first": {"test": "first-test"}
+                },
+                "aliases": {
+                    "/projects/app": ["first", "second"],
+                    "first": ["base"],
+                    "second": ["base"]
+                }
+            }"#,
+        )
+        .unwrap();
+
+        let resolved = config.resolve_project(Path::new("/projects/app"), &LocalProjects::new());
+        assert_eq!(resolved["test"], "base-test");
+    }
+
+    #[test]
+    fn circular_aliases_skip_only_the_current_chain() {
+        let config: Config = serde_json::from_str(
+            r#"{
+                "projects": {
+                    "/projects/a": {"test": "a-test"},
+                    "/projects/b": {"test": "b-test"},
+                    "base": {"build": "base-build"}
+                },
+                "aliases": {
+                    "/projects/a": ["/projects/a", "/projects/b"],
+                    "/projects/b": ["/projects/a", "base"]
+                }
+            }"#,
+        )
+        .unwrap();
+
+        for (path, command) in [("/projects/a", "a-test"), ("/projects/b", "b-test")] {
+            let resolved = config.resolve_project(Path::new(path), &LocalProjects::new());
+            assert_eq!(resolved["test"], command);
+            assert_eq!(resolved["build"], "base-build");
+            let groups = config.resolve_project_grouped(Path::new(path), &LocalProjects::new());
+            assert_eq!(groups.len(), 3);
+        }
     }
 
     #[test]

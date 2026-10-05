@@ -315,6 +315,8 @@ taco alias /Users/robin/projects/other-app
 # Added "/Users/robin/projects/other-app" capabilities in /Users/robin/projects/my-app
 ```
 
+Aliases are transitive: if `other-app` aliases another project or preset, you inherit those commands too. Each project's own commands win over its aliases, and later aliases win over earlier ones. Circular references are skipped when a project is already in the current alias chain.
+
 #### Unalias – `taco unalias {name}`
 
 Removes an alias from the current project again:
